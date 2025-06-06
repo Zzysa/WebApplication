@@ -1,0 +1,23 @@
+# docker-compose.dev.yml (Development)
+
+services:
+  backend-api:
+    command: npm run dev
+    volumes:
+      - ./backend-api:/usr/src/app
+      - /usr/src/app/node_modules
+
+  frontend-react:
+    build:
+      context: ./frontend-react
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend-react:/app
+      - /app/node_modules
+    environment:
+      - HOST=0.0.0.0
+      - WDS_SOCKET_HOST=0.0.0.0
+      - WDS_SOCKET_PORT=0
+      - CHOKIDAR_USEPOLLING=true

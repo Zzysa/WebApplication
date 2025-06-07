@@ -1,7 +1,7 @@
 services:
   backend-api:
     build:
-      context: ./backend-api
+      context: ../../services/backend-api
       dockerfile: Dockerfile
     ports:
       - "3001:3001"
@@ -10,7 +10,7 @@ services:
 
   frontend-react:
     build:
-      context: ./frontend-react
+      context: ../../services/frontend-react
       dockerfile: Dockerfile
     ports:
       - "80:80"

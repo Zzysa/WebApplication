@@ -1,8 +1,14 @@
 services:
-  backend-api:
+  api-gateway: 
     command: npm run dev
     volumes:
-      - ../../services/backend-api:/usr/src/app
+      - ../../services/api-gateway:/usr/src/app
+      - /usr/src/app/node_modules
+
+  user-service:
+    command: npm run dev
+    volumes:
+      - ../../services/user-service:/usr/src/app
       - /usr/src/app/node_modules
 
   frontend-react:

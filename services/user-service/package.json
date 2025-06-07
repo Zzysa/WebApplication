@@ -1,5 +1,5 @@
 {
-    "name": "backend-api",
+    "name": "user-service",
     "version": "1.0.0",
     "description": "Backend service for the project",
     "main": "server.js",

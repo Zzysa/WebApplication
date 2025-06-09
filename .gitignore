@@ -1,2 +1,3 @@
 **/node_modules/
 services/account-service/config/firebase-service-account.json
+.env

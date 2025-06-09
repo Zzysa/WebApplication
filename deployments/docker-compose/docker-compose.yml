@@ -1,5 +1,15 @@
 services:
-  api-gateway: 
+  frontend-react:
+    build:
+      context: ../../services/frontend-react
+      dockerfile: Dockerfile 
+    ports:
+      - "80:80"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  api-gateway:
     build:
       context: ../../services/api-gateway
       dockerfile: Dockerfile
@@ -7,24 +17,15 @@ services:
       - "8000:8000"
     networks:
       - app-network
+    restart: unless-stopped
 
-  user-service:
+  account-service:
     build:
-      context: ../../services/user-service
+      context: ../../services/account-service
       dockerfile: Dockerfile
     networks:
       - app-network
-
-  frontend-react:
-    build:
-      context: ../../services/frontend-react
-      dockerfile: Dockerfile
-    ports:
-      - "80:80"
-    depends_on:
-      - api-gateway
-    networks:
-      - app-network
+    restart: unless-stopped
 
 networks:
   app-network:

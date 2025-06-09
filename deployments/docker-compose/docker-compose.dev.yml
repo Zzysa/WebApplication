@@ -1,27 +1,25 @@
 services:
-  api-gateway: 
+  frontend-react:
+    build:
+      context: ../../services/frontend-react
+      dockerfile: Dockerfile.dev 
+    ports:
+      - "3000:3000" 
+    volumes:
+      - ../../services/frontend-react/src:/app/src
+      - ../../services/frontend-react/public:/app/public  
+    environment:
+      - HOST=0.0.0.0
+      - CHOKIDAR_USEPOLLING=true
+
+  api-gateway:
     command: npm run dev
     volumes:
       - ../../services/api-gateway:/usr/src/app
       - /usr/src/app/node_modules
 
-  user-service:
+  account-service:
     command: npm run dev
     volumes:
-      - ../../services/user-service:/usr/src/app
+      - ../../services/account-service:/usr/src/app
       - /usr/src/app/node_modules
-
-  frontend-react:
-    build:
-      context: ../../services/frontend-react
-      dockerfile: Dockerfile.dev
-    ports:
-      - "3000:3000"
-    volumes:
-      - ../../services/frontend-react:/app
-      - /app/node_modules
-    environment:
-      - HOST=0.0.0.0
-      - WDS_SOCKET_HOST=0.0.0.0
-      - WDS_SOCKET_PORT=0
-      - CHOKIDAR_USEPOLLING=true

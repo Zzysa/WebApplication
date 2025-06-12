@@ -1,13 +1,17 @@
-FROM node:18-alpine AS builder
+FROM node:18-alpine
+
 WORKDIR /usr/src/app
+
 COPY package*.json ./
+
+COPY prisma ./prisma/
+
 RUN npm install
+
+RUN npx prisma generate
+
 COPY . .
 
-FROM node:18-alpine
-WORKDIR /usr/src/app
-COPY --from=builder /usr/src/app/node_modules ./node_modules
-COPY --from=builder /usr/src/app/package*.json ./
-COPY --from=builder /usr/src/app/server.js ./server.js
 EXPOSE 3001
-CMD [ "node", "server.js" ]
+
+CMD ["node", "server.js"]

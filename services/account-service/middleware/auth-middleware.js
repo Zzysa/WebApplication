@@ -1,4 +1,4 @@
-const admin = require("../config/firebase-admin"); 
+const admin = require("../config/firebase-admin.js");
 
 const verifyAuthToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -12,8 +12,8 @@ const verifyAuthToken = async (req, res, next) => {
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    req.user = decodedToken; 
-    next(); 
+    req.firebaseUser = decodedToken;
+    next();
   } catch (error) {
     console.error("Error verifying Firebase ID token:", error);
     return res.status(403).json({

@@ -12,29 +12,43 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showLogin, setShowLogin] = useState(true); 
+  const [adminData, setAdminData] = useState(null);
   const [protectedData, setProtectedData] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setLoading(true);
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          const idToken = await currentUser.getIdToken();
-          await axios.post(
-            `${API_GATEWAY_URL}/api/auth/sync`,
-            {},
-            { headers: { Authorization: `Bearer ${idToken}` } },
-          );
-          console.log("User synced successfully!");
-        } catch (err) {
-          console.error("Failed to sync user:", err);
-          setError("Could not sync user with backend.");
-        }
+    const fetchAndSetUserData = async (firebaseUser) => {
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        await axios.post(
+          `${API_GATEWAY_URL}/api/auth/sync`,
+          {},
+          { headers: { Authorization: `Bearer ${idToken}` } },
+        );
+        console.log("User synced successfully!");
+  
+        const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        setProtectedData(response.data); 
+      } catch (err) {
+        console.error("Failed to sync or fetch user data:", err);
+        setError("Could not sync or fetch user data from backend.");
       }
-      setLoading(false);
+    };
+  
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (!currentUser) {
+        setProtectedData(null);
+        setAdminData(null);
+        setError("");
+        setLoading(false);
+      } else {
+        fetchAndSetUserData(currentUser).finally(() => setLoading(false));
+      }
     });
+  
     return () => unsubscribe();
   }, []);
 
@@ -44,15 +58,32 @@ function App() {
     setError("");
   };
 
+  const fetchAdminData = async () => {
+    if (!user) return;
+    setError("");
+    setAdminData(null); 
+  
+    try {
+      const idToken = await user.getIdToken();
+      const response = await axios.get(`${API_GATEWAY_URL}/api/users`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      setAdminData(response.data);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to fetch admin data.");
+    }
+  };
+
   const fetchProtectedData = async () => {
     if (!user) return;
     setError("");
+    setAdminData(null);
     try {
       const idToken = await user.getIdToken();
       const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
-      setProtectedData(response.data);
+      setProtectedData(response.data); 
     } catch (err) {
       setError(err.response?.data?.message || "Failed to fetch data.");
     }
@@ -68,18 +99,38 @@ function App() {
         <h1>Microservice App with Firebase Auth</h1>
         {user ? (
           <div className="protected-section">
-            <p>
-              Welcome, <strong>{user.email}</strong>
-            </p>
-            <button onClick={handleLogout}>Logout</button>
-            <hr />
-            <button onClick={fetchProtectedData}>Get Protected Data</button>
-            {protectedData && (
+          <p>
+            Welcome, <strong>{user.email}</strong>
+            {protectedData?.role && ` (Role: ${protectedData.role})`}
+          </p>
+          <button onClick={handleLogout}>Logout</button>
+          <hr />
+        
+          <button onClick={fetchProtectedData}>Get My Data</button>
+          {protectedData && (
+            <div>
+              <h4>My User Data (from DB):</h4>
               <pre className="data-preview">
                 {JSON.stringify(protectedData, null, 2)}
               </pre>
-            )}
-          </div>
+            </div>
+          )}
+          {protectedData?.role === "admin" && (
+            <div className="admin-panel">
+              <hr />
+              <h3>Admin Panel</h3>
+              <button onClick={fetchAdminData}>Fetch All Users</button>
+              {adminData && (
+                <div>
+                  <h4>All Users List:</h4>
+                  <pre className="data-preview">
+                    {JSON.stringify(adminData, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         ) : (
           <div>
             {showLogin ? (

@@ -1,64 +1,55 @@
 const express = require("express");
-const { PrismaClient } = require("./generated/prisma");
-const verifyAuthToken = require("./middleware/auth-middleware");
+const { PrismaClient } = require("./prisma/generated/prisma");
+
+const verifyAuthToken = require("./middleware/auth-middleware.js");
+const addUserToRequest = require("./middleware/addUserToRequest.js");
+const checkRole = require("./middleware/checkRole.js");
 
 const app = express();
 const prisma = new PrismaClient();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
 
 app.post("/api/auth/sync", verifyAuthToken, async (req, res) => {
-  const firebaseUid = req.user.uid;
-  const email = req.user.email;
-
+  const { uid, email } = req.firebaseUser;
   try {
-    const existingUser = await prisma.user.findUnique({
-      where: { firebaseUid },
+    const user = await prisma.user.upsert({
+      where: { firebaseUid: uid },
+      update: { email },
+      create: { firebaseUid: uid, email },
     });
-
-    if (existingUser) {
-      return res.status(200).json(existingUser);
-    }
-
-    const newUser = await prisma.user.create({
-      data: {
-        firebaseUid: firebaseUid,
-        email: email,
-      },
-    });
-
-    console.log(`[Account Service] Synced new user: ${email}`);
-    res.status(201).json(newUser);
+    console.log(`[Account Service] Synced user: ${email}`);
+    res.status(200).json(user);
   } catch (error) {
     console.error("[Account Service] Sync error:", error);
     res.status(500).json({ message: "Could not sync user" });
   }
 });
 
-app.get("/api/users/me", verifyAuthToken, async (req, res) => {
-  const firebaseUid = req.user.uid;
+app.get(
+  "/api/users/me",
+  verifyAuthToken, 
+  addUserToRequest, 
+  (req, res) => {
+    res.status(200).json(req.user);
+  },
+);
 
-  try {
-    const user = await prisma.user.findUnique({
-      where: {
-        firebaseUid: firebaseUid,
-      },
-    });
-
-    if (!user) {
-      return res
-        .status(404)
-        .json({ message: "User not found in our database. Please sync." });
+app.get(
+  "/api/users",
+  verifyAuthToken, 
+  addUserToRequest, 
+  checkRole("admin"), 
+  async (req, res) => {
+    try {
+      const users = await prisma.user.findMany();
+      res.status(200).json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching users" });
     }
-
-    console.log(`[Account Service] Fetched data for user: ${user.email}`);
-    res.status(200).json(user);
-  } catch (error) {
-    console.error("[Account Service] /me error:", error);
-    res.status(500).json({ message: "Error fetching user data" });
-  }
-});
+  },
+);
 
 app.listen(PORT, () => {
   console.log(`[Account Service] Running on port ${PORT}`);

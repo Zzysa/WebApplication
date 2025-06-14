@@ -2,7 +2,7 @@ services:
   frontend-react:
     build:
       context: ../../services/frontend-react
-      dockerfile: Dockerfile 
+      dockerfile: Dockerfile
     ports:
       - "80:80"
     networks:
@@ -23,6 +23,8 @@ services:
     build:
       context: ../../services/account-service
       dockerfile: Dockerfile
+    env_file:
+      - ../../services/account-service/.env
     networks:
       - app-network
     depends_on:
@@ -30,17 +32,59 @@ services:
     restart: unless-stopped
 
   db:
-    image: postgres:15-alpine 
-    ports: 
+    image: postgres:15-alpine
+    ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=user 
+      - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=shop_db 
+      - POSTGRES_DB=shop_db
     volumes:
-      - postgres-data:/var/lib/postgresql/data 
+      - postgres-data:/var/lib/postgresql/data
     networks:
       - app-network
+    restart: unless-stopped
+
+  mongo:
+      image: mongo:7.0
+      command: mongod --quiet --logpath /dev/null 
+      environment:
+        - MONGO_INITDB_ROOT_USERNAME=root
+        - MONGO_INITDB_ROOT_PASSWORD=password
+      volumes:
+        - mongo-data:/data/db
+      networks:
+        - app-network
+      restart: unless-stopped
+
+  mongo-express:
+    image: mongo-express:1.0.2-20
+    ports:
+      - "8081:8081" 
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo 
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      - ME_CONFIG_MONGODB_AUTH_USERNAME=root 
+      - ME_CONFIG_MONGODB_AUTH_PASSWORD=password 
+    depends_on:
+      - mongo 
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  product-service:
+    build:
+      context: ../../services/product-service
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    env_file:
+      - ../../services/product-service/.env
+    networks:
+      - app-network
+    depends_on:
+      - mongo 
     restart: unless-stopped
 
 networks:
@@ -49,3 +93,4 @@ networks:
 
 volumes:
   postgres-data:
+  mongo-data: 

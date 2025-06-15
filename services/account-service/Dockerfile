@@ -1,17 +1,15 @@
-FROM node:18-alpine
-
+FROM node:20-alpine AS development
 WORKDIR /usr/src/app
-
 COPY package*.json ./
-
-COPY prisma ./prisma/
-
 RUN npm install
-
-RUN npx prisma generate
-
 COPY . .
-
 EXPOSE 3001
+CMD ["npm","run","dev"]
 
-CMD ["node", "server.js"]
+FROM node:20-alpine AS production
+WORKDIR /usr/src/app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY . .
+EXPOSE 3001
+CMD ["npm","start"]

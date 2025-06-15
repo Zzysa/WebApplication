@@ -1,18 +1,8 @@
 services:
-  frontend-react:
-    build:
-      context: ../../services/frontend-react
-      dockerfile: Dockerfile
-    ports:
-      - "80:80"
-    networks:
-      - app-network
-    restart: unless-stopped
-
   api-gateway:
     build:
       context: ../../services/api-gateway
-      dockerfile: Dockerfile
+      target: production
     ports:
       - "8000:8000"
     networks:
@@ -22,53 +12,11 @@ services:
   account-service:
     build:
       context: ../../services/account-service
-      dockerfile: Dockerfile
+      target: production
     env_file:
       - ../../services/account-service/.env
-    networks:
-      - app-network
     depends_on:
       - db
-    restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=shop_db
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - app-network
-    restart: unless-stopped
-
-  mongo:
-      image: mongo:7.0
-      command: mongod --quiet --logpath /dev/null 
-      environment:
-        - MONGO_INITDB_ROOT_USERNAME=root
-        - MONGO_INITDB_ROOT_PASSWORD=password
-      volumes:
-        - mongo-data:/data/db
-      networks:
-        - app-network
-      restart: unless-stopped
-
-  mongo-express:
-    image: mongo-express:1.0.2-20
-    ports:
-      - "8081:8081" 
-    environment:
-      - ME_CONFIG_MONGODB_SERVER=mongo 
-      - ME_CONFIG_MONGODB_PORT=27017
-      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
-      - ME_CONFIG_MONGODB_AUTH_USERNAME=root 
-      - ME_CONFIG_MONGODB_AUTH_PASSWORD=password 
-    depends_on:
-      - mongo 
     networks:
       - app-network
     restart: unless-stopped
@@ -76,21 +24,68 @@ services:
   product-service:
     build:
       context: ../../services/product-service
-      dockerfile: Dockerfile
-    ports:
-      - "3002:3002"
+      target: production
     env_file:
       - ../../services/product-service/.env
+    depends_on:
+      - mongo
     networks:
       - app-network
+    restart: unless-stopped
+
+  frontend-react:
+    build:
+      context: ../../services/frontend-react
+      target: production
+    ports:
+      - "80:80"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: shop_db
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7.0
+    command: ["mongod","--quiet","--logpath","/dev/null"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  mongo-express:
+    image: mongo-express:1.0.2-20
+    ports:
+      - "8081:8081"
     depends_on:
-      - mongo 
+      - mongo
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_MONGODB_AUTH_USERNAME: root
+      ME_CONFIG_MONGODB_AUTH_PASSWORD: password
+    networks:
+      - app-network
     restart: unless-stopped
 
 networks:
   app-network:
-    driver: bridge
 
 volumes:
   postgres-data:
-  mongo-data: 
+  mongo-data:

@@ -1,11 +1,13 @@
 const express = require("express");
 const { PrismaClient } = require("./prisma/generated/prisma");
+const helmet = require("helmet");
 
 const verifyAuthToken = require("./middleware/auth-middleware.js");
 const addUserToRequest = require("./middleware/addUserToRequest.js");
 const checkRole = require("./middleware/checkRole.js");
 
 const app = express();
+app.use(helmet());
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 

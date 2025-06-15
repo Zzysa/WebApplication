@@ -17,11 +17,33 @@ const Login = () => {
     }
   };
 
+  const styles = {
+    formContainer: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "10px",
+      width: "300px",
+      margin: "auto",
+    },
+    input: {
+      width: "100%",
+      padding: "8px",
+      boxSizing: "border-box",
+    },
+    button: {
+      width: "50%",
+      padding: "10px",
+      cursor: "pointer",
+    },
+  };
+
   return (
-    <div className="form-container">
-      <h2>Login</h2>
-      <form onSubmit={handleLogin}>
+    <div>
+      <h2 style={{ textAlign: "center" }}>Login</h2>
+      <form style={styles.formContainer} onSubmit={handleLogin}>
         <input
+          style={styles.input}
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -29,15 +51,18 @@ const Login = () => {
           required
         />
         <input
+          style={styles.input}
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
           required
         />
-        <button type="submit">Login</button>
+        <button style={styles.button} type="submit">
+          Login
+        </button>
       </form>
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
     </div>
   );
 };

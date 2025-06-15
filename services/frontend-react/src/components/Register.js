@@ -17,11 +17,33 @@ const Register = () => {
     }
   };
 
+  const styles = {
+    formContainer: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "10px",
+      width: "300px",
+      margin: "auto",
+    },
+    input: {
+      width: "100%",
+      padding: "8px",
+      boxSizing: "border-box",
+    },
+    button: {
+      width: "50%",
+      padding: "10px",
+      cursor: "pointer",
+    },
+  };
+
   return (
-    <div className="form-container">
-      <h2>Register</h2>
-      <form onSubmit={handleRegister}>
+    <div>
+      <h2 style={{ textAlign: "center" }}>Register</h2>
+      <form style={styles.formContainer} onSubmit={handleRegister}>
         <input
+          style={styles.input}
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -29,15 +51,18 @@ const Register = () => {
           required
         />
         <input
+          style={styles.input}
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password (min. 6 characters)"
           required
         />
-        <button type="submit">Register</button>
+        <button style={styles.button} type="submit">
+          Register
+        </button>
       </form>
-      {error && <p style={{ color: "red" }}>{error}</p>}
+      {error && <p style={{ color: "red", textAlign: "center" }}>{error}</p>}
     </div>
   );
 };

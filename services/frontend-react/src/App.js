@@ -10,10 +10,11 @@ const API_GATEWAY_URL = "http://localhost:8000";
 
 function App() {
   const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showLogin, setShowLogin] = useState(true); 
-  const [adminData, setAdminData] = useState(null);
-  const [protectedData, setProtectedData] = useState(null);
+  const [showLogin, setShowLogin] = useState(true);
+  const [products, setProducts] = useState([]);
+  const [adminUserList, setAdminUserList] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -25,69 +26,63 @@ function App() {
           {},
           { headers: { Authorization: `Bearer ${idToken}` } },
         );
-        console.log("User synced successfully! His token is:");
-        console.log(idToken);
-  
-        const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        setProtectedData(response.data); 
+        const response = await axios.get(
+          `${API_GATEWAY_URL}/api/users/me`,
+          {
+            headers: { Authorization: `Bearer ${idToken}` },
+          },
+        );
+        setUserData(response.data);
       } catch (err) {
-        console.error("Failed to sync or fetch user data:", err);
-        setError("Could not sync or fetch user data from backend.");
+        setError("Could not sync or fetch user data.");
       }
     };
-  
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
-        setProtectedData(null);
-        setAdminData(null);
+        setUserData(null);
+        setAdminUserList(null);
         setError("");
         setLoading(false);
       } else {
         fetchAndSetUserData(currentUser).finally(() => setLoading(false));
       }
     });
-  
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await axios.get(`${API_GATEWAY_URL}/api/products`);
+        setProducts(response.data);
+      } catch (err) {
+        setError("Could not fetch products.");
+      }
+    };
+    fetchProducts();
   }, []);
 
   const handleLogout = async () => {
     await signOut(auth);
-    setProtectedData(null);
-    setError("");
   };
 
-  const fetchAdminData = async () => {
-    if (!user) return;
-    setError("");
-    setAdminData(null); 
-  
+  const fetchAdminUserList = async () => {
+    if (!user || userData?.role !== "admin") return;
     try {
       const idToken = await user.getIdToken();
       const response = await axios.get(`${API_GATEWAY_URL}/api/users`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
-      setAdminData(response.data);
+      setAdminUserList(response.data);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to fetch admin data.");
     }
   };
 
-  const fetchProtectedData = async () => {
-    if (!user) return;
-    setError("");
-    setAdminData(null);
-    try {
-      const idToken = await user.getIdToken();
-      const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      setProtectedData(response.data); 
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to fetch data.");
-    }
+  const getUsername = (email) => {
+    return email ? email.split("@")[0] : "Guest";
   };
 
   if (loading) {
@@ -97,49 +92,51 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>Microservice App with Firebase Auth</h1>
-        {user ? (
-          <div className="protected-section">
-          <p>
-            Welcome, <strong>{user.email}</strong>
-            {protectedData?.role && ` (Role: ${protectedData.role})`}
-          </p>
-          <button onClick={handleLogout}>Logout</button>
-          <hr />
-        
-          <button onClick={fetchProtectedData}>Get My Data</button>
-          {protectedData && (
-            <div>
-              <h4>My User Data (from DB):</h4>
-              <pre className="data-preview">
-                {JSON.stringify(protectedData, null, 2)}
-              </pre>
-            </div>
-          )}
-          {protectedData?.role === "admin" && (
-            <div className="admin-panel">
-              <hr />
-              <h3>Admin Panel</h3>
-              <button onClick={fetchAdminData}>Fetch All Users</button>
-              {adminData && (
-                <div>
-                  <h4>All Users List:</h4>
-                  <pre className="data-preview">
-                    {JSON.stringify(adminData, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <h1>Microservice Shop</h1>
+        {user && userData ? (
+          <div className="user-section">
+            <p>
+              Hello, <strong>{getUsername(user.email)}</strong>! (Role:{" "}
+              {userData.role})
+            </p>
+            <button onClick={handleLogout}>Logout</button>
+          </div>
         ) : (
-          <div>
+          <p className="guest-section">
+            Welcome, Guest! Please log in or register.
+          </p>
+        )}
+      </header>
+
+      <main>
+        {user ? (
+          <>
+            {userData?.role === "admin" && (
+              <div className="admin-panel">
+                <h3>Admin Panel</h3>
+                <button onClick={fetchAdminUserList}>Fetch All Users</button>
+                {adminUserList && (
+                  <div>
+                    <h4>All Users List:</h4>
+                    <pre className="data-preview">
+                      {JSON.stringify(adminUserList, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="centered-content">
             {showLogin ? (
               <>
                 <Login />
                 <p>
                   No account?{" "}
-                  <button className="link-button" onClick={() => setShowLogin(false)}>
+                  <button
+                    className="link-button"
+                    onClick={() => setShowLogin(false)}
+                  >
                     Register here
                   </button>
                 </p>
@@ -149,7 +146,10 @@ function App() {
                 <Register />
                 <p>
                   Already have an account?{" "}
-                  <button className="link-button" onClick={() => setShowLogin(true)}>
+                  <button
+                    className="link-button"
+                    onClick={() => setShowLogin(true)}
+                  >
                     Login here
                   </button>
                 </p>
@@ -157,8 +157,30 @@ function App() {
             )}
           </div>
         )}
-        {error && <p style={{ color: "red", marginTop: "20px" }}>{error}</p>}
-      </header>
+
+        <div className="product-list">
+          <h2>Our Products</h2>
+          {products.length > 0 ? (
+            <div className="products-grid">
+              {products.map((product) => (
+                <div key={product._id} className="product-card">
+                  <img
+                    src={product.imageUrl || "https://via.placeholder.com/150"}
+                    alt={product.name}
+                    className="product-image"
+                  />
+                  <h3>{product.name}</h3>
+                  <p>{product.description}</p>
+                  <p className="price">${product.price.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>No products found.</p>
+          )}
+        </div>
+        {error && <p className="error-message">{error}</p>}
+      </main>
     </div>
   );
 }

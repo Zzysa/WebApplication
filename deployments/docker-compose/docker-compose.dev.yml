@@ -28,4 +28,3 @@ services:
     command: npm run dev
     volumes:
       - ../../services/product-service:/usr/src/app
-      - /usr/src/app/node_modules

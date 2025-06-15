@@ -25,7 +25,8 @@ function App() {
           {},
           { headers: { Authorization: `Bearer ${idToken}` } },
         );
-        console.log("User synced successfully!");
+        console.log("User synced successfully! His token is:");
+        console.log(idToken);
   
         const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
           headers: { Authorization: `Bearer ${idToken}` },

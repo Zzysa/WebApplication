@@ -16,11 +16,10 @@ function App() {
 	const [products, setProducts] = useState([]);
 	const [adminUserList, setAdminUserList] = useState(null);
 	const [error, setError] = useState("");
-
+	const [cart, setCart] = useState([]);
 	const [newProductName, setNewProductName] = useState("");
 	const [newProductPrice, setNewProductPrice] = useState("");
 	const [newProductDesc, setNewProductDesc] = useState("");
-
 	const [editingProduct, setEditingProduct] = useState(null);
 
 	const fetchProducts = async () => {
@@ -56,6 +55,7 @@ function App() {
 
 		const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
 			setUser(currentUser);
+			setCart([]);
 			if (!currentUser) {
 				setUserData(null);
 				setAdminUserList(null);
@@ -165,6 +165,57 @@ function App() {
 		setNewProductDesc("");
 	};
 
+	const handleAddToCart = (product) => {
+		setCart((prevCart) => {
+			const existingProduct = prevCart.find(
+				(item) => item._id === product._id,
+			);
+			if (existingProduct) {
+				return prevCart.map((item) =>
+					item._id === product._id
+						? { ...item, quantity: item.quantity + 1 }
+						: item,
+				);
+			} else {
+				return [...prevCart, { ...product, quantity: 1 }];
+			}
+		});
+	};
+
+	const handlePlaceOrder = async () => {
+		if (cart.length === 0) {
+			setError("Your cart is empty.");
+			return;
+		}
+		if (!user) {
+			setError("Please log in to place an order.");
+			return;
+		}
+		try {
+			const idToken = await user.getIdToken();
+			const orderData = {
+				products: cart.map((item) => ({
+					productId: item._id,
+					name: item.name,
+					quantity: item.quantity,
+					price: item.price,
+				})),
+				totalPrice: cart.reduce(
+					(sum, item) => sum + item.price * item.quantity,
+					0,
+				),
+			};
+			await axios.post(`${API_GATEWAY_URL}/api/orders`, orderData, {
+				headers: { Authorization: `Bearer ${idToken}` },
+			});
+			alert("Order placed successfully!");
+			setCart([]);
+		} catch (err) {
+			setError("Failed to place order.");
+			console.error(err);
+		}
+	};
+
 	const fetchAdminUserList = async () => {
 		if (!user || userData?.role !== "admin") return;
 		try {
@@ -226,7 +277,6 @@ function App() {
 										</pre>
 									</div>
 								)}
-
 								<form
 									onSubmit={
 										editingProduct
@@ -285,6 +335,37 @@ function App() {
 								</form>
 							</div>
 						)}
+						<div className="cart-section">
+							<h3>Your Cart ({cart.length} items)</h3>
+							{cart.length > 0 ? (
+								<>
+									<ul>
+										{cart.map((item) => (
+											<li key={item._id}>
+												{item.name} - ${item.price} x{" "}
+												{item.quantity}
+											</li>
+										))}
+									</ul>
+									<p>
+										Total: $
+										{cart
+											.reduce(
+												(sum, item) =>
+													sum +
+													item.price * item.quantity,
+												0,
+											)
+											.toFixed(2)}
+									</p>
+									<button onClick={handlePlaceOrder}>
+										Place Order
+									</button>
+								</>
+							) : (
+								<p>Your cart is empty.</p>
+							)}
+						</div>
 					</>
 				) : (
 					<div className="centered-content">
@@ -337,6 +418,16 @@ function App() {
 									<p className="price">
 										${product.price.toFixed(2)}
 									</p>
+									{user && (
+										<button
+											className="add-to-cart-button"
+											onClick={() =>
+												handleAddToCart(product)
+											}
+										>
+											Add to Cart
+										</button>
+									)}
 									{user && userData?.role === "admin" && (
 										<div className="admin-buttons">
 											<button

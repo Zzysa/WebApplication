@@ -5,7 +5,6 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const checkAdmin = require("./middleware/auth-middleware.js");
 
-
 const app = express();
 const PORT = 8000;
 
@@ -52,18 +51,29 @@ app.use("/api/users", async (req, res, next) => {
 	} catch (error) { next(error); }
 });
 
+app.use("/api/orders", async (req, res, next) => {
+	try {
+		const url = `${USER_SERVICE_URL}${req.originalUrl}`;
+		const response = await axios({
+			method: req.method,
+			url,
+			data: req.body,
+			headers: { Authorization: req.headers.authorization },
+		});
+		res.status(response.status).json(response.data);
+	} catch (error) {
+		next(error);
+	}
+});
 
 app.use("/api/products",
     (req, res, next) => {
-        // GET-запросы пропускаем без проверки
         if (req.method === "GET") {
             return next();
         }
-        // Для POST, PUT, DELETE - запускаем проверку
         checkAdmin(req, res, next);
     },
     async (req, res, next) => {
-        // Этот блок выполняется, только если checkAdmin вызвал next()
         try {
             const url = `${PRODUCT_SERVICE_URL}${req.originalUrl}`;
             const response = await axios({
@@ -88,7 +98,6 @@ app.use((err, req, res, next) => {
 	}
 	res.status(500).json({ message: "Internal Gateway Error" });
 });
-
 
 app.listen(PORT, () => {
 	console.log(`[API Gateway] Running on port ${PORT}`);

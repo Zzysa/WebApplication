@@ -15,4 +15,17 @@ model User {
   role        String   @default("client")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt 
+  orders      Order[]  // Связь с заказами
+}
+
+model Order {
+  id         String   @id @default(cuid())
+  userId     String
+  products   Json     // Хранение массива продуктов как JSON
+  totalPrice Float
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  user       User     @relation(fields: [userId], references: [id])
 }

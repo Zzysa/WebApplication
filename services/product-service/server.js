@@ -14,6 +14,11 @@ app.use(express.json());
 
 app.use("/api/products", productRoutes);
 
+app.use((err, req, res, next) => {
+	console.error(err.stack);
+	res.status(500).json({ message: err.message || "Something went wrong!" });
+});
+
 app.listen(PORT, () => {
   console.log(`[Product Service] Running on port ${PORT}`);
 });

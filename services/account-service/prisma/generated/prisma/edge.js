@@ -184,8 +184,8 @@ const config = {
       }
     }
   },
-  "inlineSchema": "generator client {\n  provider = \"prisma-client-js\"\n  output   = \"./generated/prisma\"\n}\n\ndatasource db {\n  provider = \"postgresql\"\n  url      = env(\"DATABASE_URL\")\n}\n\nmodel User {\n  id          String   @id @default(cuid())\n  firebaseUid String   @unique\n  email       String   @unique\n  role        String   @default(\"client\")\n  createdAt   DateTime @default(now())\n  updatedAt   DateTime @updatedAt\n  orders      Order[] // Связь с заказами\n}\n\nmodel Order {\n  id         String   @id @default(cuid())\n  userId     String\n  products   Json // Хранение массива продуктов как JSON\n  totalPrice Float\n  status     String   @default(\"pending\")\n  createdAt  DateTime @default(now())\n  updatedAt  DateTime @updatedAt\n\n  user User @relation(fields: [userId], references: [id])\n}\n",
-  "inlineSchemaHash": "a2225bdca97290b750e8ccb4b8fa3ccf9c2f0c32e61d8ad64cfdb5122cadbb4c",
+  "inlineSchema": "generator client {\n  provider = \"prisma-client-js\"\n  output   = \"./generated/prisma\"\n}\n\ndatasource db {\n  provider = \"postgresql\"\n  url      = env(\"DATABASE_URL\")\n}\n\nmodel User {\n  id          String   @id @default(cuid())\n  firebaseUid String   @unique\n  email       String   @unique\n  role        String   @default(\"client\")\n  createdAt   DateTime @default(now())\n  updatedAt   DateTime @updatedAt\n  orders      Order[]\n}\n\nmodel Order {\n  id         String   @id @default(cuid())\n  userId     String\n  products   Json\n  totalPrice Float\n  status     String   @default(\"pending\")\n  createdAt  DateTime @default(now())\n  updatedAt  DateTime @updatedAt\n\n  user User @relation(fields: [userId], references: [id])\n}\n",
+  "inlineSchemaHash": "d0f28888b2cab866bbd9475efeb0708e9c8b8e69666a895459640b180d58fd77",
   "copyEngine": true
 }
 config.dirname = '/'

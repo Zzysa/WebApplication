@@ -15,13 +15,13 @@ model User {
   role        String   @default("client")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt 
-  orders      Order[]  // Связь с заказами
+  orders      Order[]
 }
 
 model Order {
   id         String   @id @default(cuid())
   userId     String
-  products   Json     // Хранение массива продуктов как JSON
+  products   Json
   totalPrice Float
   status     String   @default("pending")
   createdAt  DateTime @default(now())

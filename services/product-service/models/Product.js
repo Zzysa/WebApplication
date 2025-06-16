@@ -21,10 +21,27 @@ const productSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Category',
+      required: false,
+    },
+    inStock: {
+      type: Boolean,
+      default: true,
+    },
+    tags: [{
+      type: String,
+      trim: true,
+    }],
   },
   {
     timestamps: true,
   },
 );
+
+productSchema.index({ category: 1 });
+productSchema.index({ price: 1 });
+productSchema.index({ name: 1 });
 
 module.exports = mongoose.model("Product", productSchema);

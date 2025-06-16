@@ -5,6 +5,7 @@ import { auth } from "./firebase";
 import Login from "./components/Login";
 import Register from "./components/Register";
 import "./App.css";
+import useDebounce from './hooks/useDebounce';
 
 const API_GATEWAY_URL = process.env.REACT_APP_API_URL || "";
 
@@ -14,20 +15,79 @@ function App() {
 	const [loading, setLoading] = useState(true);
 	const [showLogin, setShowLogin] = useState(true);
 	const [products, setProducts] = useState([]);
+	const [categories, setCategories] = useState([]);
 	const [adminUserList, setAdminUserList] = useState(null);
 	const [error, setError] = useState("");
 	const [cart, setCart] = useState([]);
 	const [newProductName, setNewProductName] = useState("");
 	const [newProductPrice, setNewProductPrice] = useState("");
 	const [newProductDesc, setNewProductDesc] = useState("");
+	const [newProductCategory, setNewProductCategory] = useState("");
 	const [editingProduct, setEditingProduct] = useState(null);
+	const [userOrders, setUserOrders] = useState([]);
+	const [adminOrders, setAdminOrders] = useState([]);
+	const [activeTab, setActiveTab] = useState("products");
+	
+	const [filters, setFilters] = useState({
+		category: "",
+		search: "",
+		minPrice: "",
+		maxPrice: "",
+		sortBy: "createdAt",
+		sortOrder: "desc"
+	});
 
-	const fetchProducts = async () => {
+	const debouncedFilters = useDebounce(filters, 500);
+	
+	const [newCategoryName, setNewCategoryName] = useState("");
+	const [newCategoryDesc, setNewCategoryDesc] = useState("");
+
+	const fetchProducts = async (filterParams = {}) => {
 		try {
-			const response = await axios.get(`${API_GATEWAY_URL}/api/products`);
+			const params = { ...filters, ...filterParams };
+			const cleanParams = Object.fromEntries(
+				Object.entries(params).filter(([_, value]) => value !== "")
+			);
+			
+			const response = await axios.get(`${API_GATEWAY_URL}/api/products`, { params: cleanParams });
 			setProducts(response.data);
 		} catch (err) {
 			setError("Could not fetch products.");
+		}
+	};
+
+	const fetchCategories = async () => {
+		try {
+			const response = await axios.get(`${API_GATEWAY_URL}/api/categories`);
+			setCategories(response.data);
+		} catch (err) {
+			setError("Could not fetch categories.");
+		}
+	};
+
+	const fetchUserOrders = async () => {
+		if (!user) return;
+		try {
+			const idToken = await user.getIdToken();
+			const response = await axios.get(`${API_GATEWAY_URL}/api/orders`, {
+				headers: { Authorization: `Bearer ${idToken}` },
+			});
+			setUserOrders(response.data);
+		} catch (err) {
+			setError("Could not fetch orders.");
+		}
+	};
+
+	const fetchAdminOrders = async () => {
+		if (!user || userData?.role !== "admin") return;
+		try {
+			const idToken = await user.getIdToken();
+			const response = await axios.get(`${API_GATEWAY_URL}/api/admin/orders`, {
+				headers: { Authorization: `Bearer ${idToken}` },
+			});
+			setAdminOrders(response.data);
+		} catch (err) {
+			setError("Could not fetch admin orders.");
 		}
 	};
 
@@ -59,6 +119,8 @@ function App() {
 			if (!currentUser) {
 				setUserData(null);
 				setAdminUserList(null);
+				setUserOrders([]);
+				setAdminOrders([]);
 				setError("");
 				setLoading(false);
 			} else {
@@ -69,11 +131,43 @@ function App() {
 		});
 
 		fetchProducts();
+		fetchCategories();
 		return () => unsubscribe();
 	}, []);
 
+	useEffect(() => {
+		if (user && userData) {
+			fetchUserOrders();
+			if (userData.role === "admin") {
+				fetchAdminOrders();
+			}
+		}
+	}, [user, userData]);
+
+	useEffect(() => {
+		fetchProducts();
+	}, [debouncedFilters]);
+
 	const handleLogout = async () => {
 		await signOut(auth);
+	};
+
+	const handleFilterChange = (key, value) => {
+		setFilters(prev => ({
+			...prev,
+			[key]: value
+		}));
+	};
+
+	const clearFilters = () => {
+		setFilters({
+			category: "",
+			search: "",
+			minPrice: "",
+			maxPrice: "",
+			sortBy: "createdAt",
+			sortOrder: "desc"
+		});
 	};
 
 	const handleDeleteProduct = async (productId) => {
@@ -89,9 +183,31 @@ function App() {
 			await axios.delete(`${API_GATEWAY_URL}/api/products/${productId}`, {
 				headers: { Authorization: `Bearer ${idToken}` },
 			});
-			setProducts(products.filter((p) => p._id !== productId));
+			fetchProducts();
 		} catch (err) {
 			setError("Failed to delete product.");
+		}
+	};
+
+	const handleCreateCategory = async (e) => {
+		e.preventDefault();
+		setError("");
+		if (!user || userData?.role !== "admin") return;
+		try {
+			const idToken = await user.getIdToken();
+			const newCategory = {
+				name: newCategoryName,
+				description: newCategoryDesc,
+			};
+			await axios.post(`${API_GATEWAY_URL}/api/categories`, newCategory, {
+				headers: { Authorization: `Bearer ${idToken}` },
+			});
+			setNewCategoryName("");
+			setNewCategoryDesc("");
+			fetchCategories();
+		} catch (err) {
+			setError("Failed to create category.");
+			console.error(err);
 		}
 	};
 
@@ -105,6 +221,7 @@ function App() {
 				name: newProductName,
 				price: parseFloat(newProductPrice),
 				description: newProductDesc,
+				category: newProductCategory || undefined,
 			};
 			await axios.post(`${API_GATEWAY_URL}/api/products`, newProduct, {
 				headers: { Authorization: `Bearer ${idToken}` },
@@ -112,6 +229,7 @@ function App() {
 			setNewProductName("");
 			setNewProductPrice("");
 			setNewProductDesc("");
+			setNewProductCategory("");
 			fetchProducts();
 		} catch (err) {
 			setError("Failed to create product. Check console for details.");
@@ -128,23 +246,21 @@ function App() {
 				name: newProductName,
 				price: parseFloat(newProductPrice),
 				description: newProductDesc,
+				category: newProductCategory || undefined,
 			};
-			const response = await axios.put(
+			await axios.put(
 				`${API_GATEWAY_URL}/api/products/${editingProduct._id}`,
 				updatedData,
 				{
 					headers: { Authorization: `Bearer ${idToken}` },
 				},
 			);
-			setProducts(
-				products.map((p) =>
-					p._id === editingProduct._id ? response.data : p,
-				),
-			);
 			setEditingProduct(null);
 			setNewProductName("");
 			setNewProductPrice("");
 			setNewProductDesc("");
+			setNewProductCategory("");
+			fetchProducts();
 		} catch (err) {
 			setError("Failed to update product.");
 			console.error(err);
@@ -156,6 +272,7 @@ function App() {
 		setNewProductName(product.name);
 		setNewProductPrice(product.price);
 		setNewProductDesc(product.description);
+		setNewProductCategory(product.category?._id || "");
 	};
 
 	const cancelEdit = () => {
@@ -163,6 +280,7 @@ function App() {
 		setNewProductName("");
 		setNewProductPrice("");
 		setNewProductDesc("");
+		setNewProductCategory("");
 	};
 
 	const handleAddToCart = (product) => {
@@ -210,8 +328,31 @@ function App() {
 			});
 			alert("Order placed successfully!");
 			setCart([]);
+			fetchUserOrders();
+			if (userData?.role === "admin") {
+				fetchAdminOrders();
+			}
 		} catch (err) {
 			setError("Failed to place order.");
+			console.error(err);
+		}
+	};
+
+	const handleUpdateOrderStatus = async (orderId, newStatus) => {
+		if (!user || userData?.role !== "admin") {
+			setError("You do not have permission to update order status.");
+			return;
+		}
+		try {
+			const idToken = await user.getIdToken();
+			await axios.patch(
+				`${API_GATEWAY_URL}/api/orders/${orderId}/status`,
+				{ status: newStatus },
+				{ headers: { Authorization: `Bearer ${idToken}` } }
+			);
+			fetchAdminOrders();
+		} catch (err) {
+			setError("Failed to update order status.");
 			console.error(err);
 		}
 	};
@@ -232,6 +373,27 @@ function App() {
 	};
 
 	const getUsername = (email) => (email ? email.split("@")[0] : "Guest");
+
+	const formatDate = (dateString) => {
+		return new Date(dateString).toLocaleDateString('en-US', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	};
+
+	const getStatusColor = (status) => {
+		const colors = {
+			pending: '#ffa500',
+			processing: '#1e90ff',
+			shipped: '#32cd32',
+			delivered: '#228b22',
+			cancelled: '#dc143c'
+		};
+		return colors[status] || '#666666';
+	};
 
 	if (loading) {
 		return <div className="App-header">Loading...</div>;
@@ -259,9 +421,223 @@ function App() {
 			<main>
 				{user ? (
 					<>
-						{userData?.role === "admin" && (
+						<div className="navigation-tabs">
+							<button 
+								className={activeTab === "products" ? "active" : ""}
+								onClick={() => setActiveTab("products")}
+							>
+								Products
+							</button>
+							<button 
+								className={activeTab === "orders" ? "active" : ""}
+								onClick={() => setActiveTab("orders")}
+							>
+								My Orders ({userOrders.length})
+							</button>
+							{userData?.role === "admin" && (
+								<>
+									<button 
+										className={activeTab === "admin-orders" ? "active" : ""}
+										onClick={() => setActiveTab("admin-orders")}
+									>
+										Manage Orders ({adminOrders.length})
+									</button>
+									<button 
+										className={activeTab === "admin-panel" ? "active" : ""}
+										onClick={() => setActiveTab("admin-panel")}
+									>
+										Admin Panel
+									</button>
+								</>
+							)}
+						</div>
+
+						{activeTab === "products" && (
+							<>
+								<div className="filters-section">
+									<h3>Filters & Search</h3>
+									<div className="filters-row">
+										<input
+											type="text"
+											placeholder="Search products..."
+											value={filters.search}
+											onChange={(e) => handleFilterChange("search", e.target.value)}
+										/>
+										<select
+											value={filters.category}
+											onChange={(e) => handleFilterChange("category", e.target.value)}
+										>
+											<option value="">All Categories</option>
+											{categories.map((cat) => (
+												<option key={cat._id} value={cat._id}>
+													{cat.name}
+												</option>
+											))}
+										</select>
+										<input
+											type="number"
+											placeholder="Min Price"
+											value={filters.minPrice}
+											onChange={(e) => handleFilterChange("minPrice", e.target.value)}
+										/>
+										<input
+											type="number"
+											placeholder="Max Price"
+											value={filters.maxPrice}
+											onChange={(e) => handleFilterChange("maxPrice", e.target.value)}
+										/>
+										<select
+											value={`${filters.sortBy}-${filters.sortOrder}`}
+											onChange={(e) => {
+												const [sortBy, sortOrder] = e.target.value.split('-');
+												handleFilterChange("sortBy", sortBy);
+												handleFilterChange("sortOrder", sortOrder);
+											}}
+										>
+											<option value="createdAt-desc">Newest First</option>
+											<option value="createdAt-asc">Oldest First</option>
+											<option value="name-asc">Name A-Z</option>
+											<option value="name-desc">Name Z-A</option>
+											<option value="price-asc">Price Low to High</option>
+											<option value="price-desc">Price High to Low</option>
+										</select>
+										<button onClick={clearFilters}>Clear Filters</button>
+									</div>
+								</div>
+
+								<div className="cart-section">
+									<h3>Your Cart ({cart.length} items)</h3>
+									{cart.length > 0 ? (
+										<>
+											<ul>
+												{cart.map((item) => (
+													<li key={item._id}>
+														{item.name} - ${item.price} x{" "}
+														{item.quantity}
+													</li>
+												))}
+											</ul>
+											<p>
+												Total: $
+												{cart
+													.reduce(
+														(sum, item) =>
+															sum +
+															item.price * item.quantity,
+														0,
+													)
+													.toFixed(2)}
+											</p>
+											<button onClick={handlePlaceOrder}>
+												Place Order
+											</button>
+										</>
+									) : (
+										<p>Your cart is empty.</p>
+									)}
+								</div>
+							</>
+						)}
+
+						{activeTab === "orders" && (
+							<div className="orders-section">
+								<h3>My Orders</h3>
+								{userOrders.length > 0 ? (
+									<div className="orders-list">
+										{userOrders.map((order) => (
+											<div key={order.id} className="order-card">
+												<div className="order-header">
+													<h4>Order #{order.id.slice(-8)}</h4>
+													<span 
+														className="order-status"
+														style={{ color: getStatusColor(order.status) }}
+													>
+														{order.status.toUpperCase()}
+													</span>
+												</div>
+												<p className="order-date">Placed: {formatDate(order.createdAt)}</p>
+												<div className="order-products">
+													{order.products.map((product, index) => (
+														<div key={index} className="order-product">
+															{product.name} x{product.quantity} - ${product.price}
+														</div>
+													))}
+												</div>
+												<p className="order-total">Total: ${order.totalPrice.toFixed(2)}</p>
+											</div>
+										))}
+									</div>
+								) : (
+									<p>You have no orders yet.</p>
+								)}
+							</div>
+						)}
+
+						{activeTab === "admin-orders" && userData?.role === "admin" && (
+							<div className="admin-orders-section">
+								<h3>Manage All Orders</h3>
+								{adminOrders.length > 0 ? (
+									<div className="admin-orders-list">
+										{adminOrders.map((order) => (
+											<div key={order.id} className="admin-order-card">
+												<div className="order-header">
+													<h4>Order #{order.id.slice(-8)}</h4>
+													<div className="order-controls">
+														<select
+															value={order.status}
+															onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
+															className="status-select"
+														>
+															<option value="pending">Pending</option>
+															<option value="processing">Processing</option>
+															<option value="shipped">Shipped</option>
+															<option value="delivered">Delivered</option>
+															<option value="cancelled">Cancelled</option>
+														</select>
+													</div>
+												</div>
+												<p className="order-customer">Customer: {order.user.email}</p>
+												<p className="order-date">Placed: {formatDate(order.createdAt)}</p>
+												<div className="order-products">
+													{order.products.map((product, index) => (
+														<div key={index} className="order-product">
+															{product.name} x{product.quantity} - ${product.price}
+														</div>
+													))}
+												</div>
+												<p className="order-total">Total: ${order.totalPrice.toFixed(2)}</p>
+											</div>
+										))}
+									</div>
+								) : (
+									<p>No orders found.</p>
+								)}
+							</div>
+						)}
+
+						{activeTab === "admin-panel" && userData?.role === "admin" && (
 							<div className="admin-panel">
 								<h3>Admin Panel</h3>
+								
+								<div className="admin-section">
+									<h4>Category Management</h4>
+									<form onSubmit={handleCreateCategory} className="category-form">
+										<input
+											type="text"
+											placeholder="Category Name"
+											value={newCategoryName}
+											onChange={(e) => setNewCategoryName(e.target.value)}
+											required
+										/>
+										<textarea
+											placeholder="Category Description (optional)"
+											value={newCategoryDesc}
+											onChange={(e) => setNewCategoryDesc(e.target.value)}
+										></textarea>
+										<button type="submit">Create Category</button>
+									</form>
+								</div>
+
 								<button onClick={fetchAdminUserList}>
 									Fetch All Users
 								</button>
@@ -269,14 +645,11 @@ function App() {
 									<div>
 										<h4>All Users List:</h4>
 										<pre className="data-preview">
-											{JSON.stringify(
-												adminUserList,
-												null,
-												2,
-											)}
+											{JSON.stringify(adminUserList, null, 2)}
 										</pre>
 									</div>
 								)}
+								
 								<form
 									onSubmit={
 										editingProduct
@@ -309,6 +682,17 @@ function App() {
 										}
 										required
 									/>
+									<select
+										value={newProductCategory}
+										onChange={(e) => setNewProductCategory(e.target.value)}
+									>
+										<option value="">Select Category (optional)</option>
+										{categories.map((cat) => (
+											<option key={cat._id} value={cat._id}>
+												{cat.name}
+											</option>
+										))}
+									</select>
 									<textarea
 										placeholder="Description"
 										value={newProductDesc}
@@ -335,37 +719,6 @@ function App() {
 								</form>
 							</div>
 						)}
-						<div className="cart-section">
-							<h3>Your Cart ({cart.length} items)</h3>
-							{cart.length > 0 ? (
-								<>
-									<ul>
-										{cart.map((item) => (
-											<li key={item._id}>
-												{item.name} - ${item.price} x{" "}
-												{item.quantity}
-											</li>
-										))}
-									</ul>
-									<p>
-										Total: $
-										{cart
-											.reduce(
-												(sum, item) =>
-													sum +
-													item.price * item.quantity,
-												0,
-											)
-											.toFixed(2)}
-									</p>
-									<button onClick={handlePlaceOrder}>
-										Place Order
-									</button>
-								</>
-							) : (
-								<p>Your cart is empty.</p>
-							)}
-						</div>
 					</>
 				) : (
 					<div className="centered-content">
@@ -399,64 +752,71 @@ function App() {
 					</div>
 				)}
 
-				<div className="product-list">
-					<h2>Our Products</h2>
-					{products.length > 0 ? (
-						<div className="products-grid">
-							{products.map((product) => (
-								<div key={product._id} className="product-card">
-									<img
-										src={
-											product.imageUrl ||
-											"https://via.placeholder.com/150"
-										}
-										alt={product.name}
-										className="product-image"
-									/>
-									<h3>{product.name}</h3>
-									<p>{product.description}</p>
-									<p className="price">
-										${product.price.toFixed(2)}
-									</p>
-									{user && (
-										<button
-											className="add-to-cart-button"
-											onClick={() =>
-												handleAddToCart(product)
+				{activeTab === "products" && (
+					<div className="product-list">
+						<h2>Our Products</h2>
+						{products.length > 0 ? (
+							<div className="products-grid">
+								{products.map((product) => (
+									<div key={product._id} className="product-card">
+										<img
+											src={
+												product.imageUrl ||
+												"https://via.placeholder.com/150"
 											}
-										>
-											Add to Cart
-										</button>
-									)}
-									{user && userData?.role === "admin" && (
-										<div className="admin-buttons">
+											alt={product.name}
+											className="product-image"
+										/>
+										<h3>{product.name}</h3>
+										{product.category && (
+											<p className="product-category">
+												Category: {product.category.name}
+											</p>
+										)}
+										<p>{product.description}</p>
+										<p className="price">
+											${product.price.toFixed(2)}
+										</p>
+										{user && (
 											<button
-												className="edit-button"
+												className="add-to-cart-button"
 												onClick={() =>
-													handleEditClick(product)
+													handleAddToCart(product)
 												}
 											>
-												Edit
+												Add to Cart
 											</button>
-											<button
-												className="delete-button"
-												onClick={() =>
-													handleDeleteProduct(
-														product._id,
-													)
-												}
-											>
-												Delete
-											</button>
-										</div>
-									)}
-								</div>
-							))}
-						</div>
-					) : (
-						<p>No products found.</p>
-					)}
-				</div>
+										)}
+										{user && userData?.role === "admin" && (
+											<div className="admin-buttons">
+												<button
+													className="edit-button"
+													onClick={() =>
+														handleEditClick(product)
+													}
+												>
+													Edit
+												</button>
+												<button
+													className="delete-button"
+													onClick={() =>
+														handleDeleteProduct(
+															product._id,
+														)
+													}
+												>
+													Delete
+												</button>
+											</div>
+										)}
+									</div>
+								))}
+							</div>
+						) : (
+							<p>No products found.</p>
+						)}
+					</div>
+				)}
 				{error && <p className="error-message">{error}</p>}
 			</main>
 		</div>

@@ -10,7 +10,7 @@ const PORT = 8000;
 
 const limiter = rateLimit({
 	windowMs: 15 * 60 * 1000,
-	max: 100,
+	max: 200,
 	standardHeaders: true,
 	legacyHeaders: false,
 });
@@ -66,7 +66,22 @@ app.use("/api/orders", async (req, res, next) => {
 	}
 });
 
-app.use("/api/products",
+app.use("/api/admin", async (req, res, next) => {
+	try {
+		const url = `${USER_SERVICE_URL}${req.originalUrl}`;
+		const response = await axios({
+			method: req.method,
+			url,
+			data: req.body,
+			headers: { Authorization: req.headers.authorization },
+		});
+		res.status(response.status).json(response.data);
+	} catch (error) {
+		next(error);
+	}
+});
+
+app.use("/api/categories",
     (req, res, next) => {
         if (req.method === "GET") {
             return next();
@@ -80,6 +95,34 @@ app.use("/api/products",
                 method: req.method,
                 url: url,
                 data: req.body,
+            });
+            res.status(response.status).json(response.data);
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+app.use("/api/products",
+    (req, res, next) => {
+        if (req.method === "GET") {
+            return next();
+        }
+        checkAdmin(req, res, next);
+    },
+    async (req, res, next) => {
+        try {
+            const queryParams = { ...req.query };
+            if (queryParams.search && Array.isArray(queryParams.search)) {
+                queryParams.search = queryParams.search.join('');
+            }
+
+            const url = `${PRODUCT_SERVICE_URL}${req.originalUrl.split('?')[0]}`;
+            const response = await axios({
+                method: req.method,
+                url: url,
+                data: req.body,
+                params: queryParams,
             });
             res.status(response.status).json(response.data);
         } catch (error) {

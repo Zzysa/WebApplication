@@ -54,6 +54,8 @@ services:
       - /app/node_modules
     networks:
       - app-network
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
 
   db:
     image: postgres:15-alpine

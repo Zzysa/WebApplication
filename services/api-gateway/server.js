@@ -6,7 +6,7 @@ const helmet = require("helmet");
 const app = express();
 const PORT = 8000;
 
-const whitelist = ["http://localhost:3000", "http://localhost"];
+const whitelist = ["http://localhost:3000", "http://localhost", "http://microshop.local"];
 
 const corsOptions = {
 	origin: function (origin, callback) {

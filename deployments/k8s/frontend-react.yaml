@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-react
+  namespace: microshop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-react
+  template:
+    metadata:
+      labels:
+        app: frontend-react
+    spec:
+      containers:
+      - name: frontend-react
+        image: frontend-react:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+        env:
+        - name: REACT_APP_API_URL
+          value: ""
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-react
+  namespace: microshop
+spec:
+  selector:
+    app: frontend-react
+  ports:
+  - port: 80
+    targetPort: 80

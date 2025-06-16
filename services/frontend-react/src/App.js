@@ -6,7 +6,7 @@ import Login from "./components/Login";
 import Register from "./components/Register";
 import "./App.css";
 
-const API_GATEWAY_URL = "http://localhost:8000";
+const API_GATEWAY_URL = process.env.REACT_APP_API_URL || "";
 
 function App() {
   const [user, setUser] = useState(null);

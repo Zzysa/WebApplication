@@ -19,6 +19,7 @@ const whitelist = [
 	"http://localhost:3000",
 	"http://localhost",
 	"http://microshop.local",
+    "http://localhost:9003",
 ];
 
 const corsOptions = {

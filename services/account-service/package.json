@@ -4,7 +4,7 @@
     "description": "Backend service for the project",
     "main": "server.js",
     "scripts": {
-        "start": "npx prisma migrate deploy && node server.js",
+        "start": "npx prisma migrate deploy || npx prisma db push && node server.js",
         "dev": "npx prisma generate && npx prisma migrate deploy && nodemon server.js",
         "seed": "npx prisma db seed"
     },

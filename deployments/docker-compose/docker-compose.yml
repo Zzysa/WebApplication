@@ -4,7 +4,7 @@ services:
       context: ../../services/api-gateway
       target: production
     ports:
-      - "8000:8000"
+      - "18000:8000"
     networks:
       - app-network
     restart: unless-stopped
@@ -38,7 +38,7 @@ services:
       context: ../../services/frontend-react
       target: production
     ports:
-      - "80:80"
+      - "18080:80"
     networks:
       - app-network
     restart: unless-stopped
@@ -70,7 +70,7 @@ services:
   mongo-express:
     image: mongo-express:1.0.2-20
     ports:
-      - "8081:8081"
+      - "18081:8081"
     depends_on:
       - mongo
     environment:

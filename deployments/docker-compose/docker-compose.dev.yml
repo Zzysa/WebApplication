@@ -4,7 +4,7 @@ services:
       context: ../../services/api-gateway
       target: development
     ports:
-      - "8000:8000"
+      - "19000:8000"
     volumes:
       - ../../services/api-gateway:/usr/src/app
       - /usr/src/app/node_modules
@@ -18,7 +18,7 @@ services:
     env_file:
       - ../../services/account-service/.env
     ports:
-      - "3001:3001"
+      - "19001:3001"
     volumes:
       - ../../services/account-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -34,7 +34,7 @@ services:
     env_file:
       - ../../services/product-service/.env
     ports:
-      - "3002:3002"
+      - "19002:3002"
     volumes:
       - ../../services/product-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -48,21 +48,21 @@ services:
       context: ../../services/frontend-react
       target: development
     ports:
-      - "3000:3000"
+      - "19003:3000"
     volumes:
       - ../../services/frontend-react:/app
       - /app/node_modules
     networks:
       - app-network
     environment:
-      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_API_URL=http://localhost:19000
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
 
   db:
     image: postgres:15-alpine
     ports:
-      - "5432:5432"
+      - "19432:5432"
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -76,7 +76,7 @@ services:
     image: mongo:7.0
     command: ["mongod","--quiet","--logpath","/dev/null"]
     ports:
-      - "27017:27017"
+      - "19017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: password
@@ -88,7 +88,7 @@ services:
   mongo-express:
     image: mongo-express:1.0.2-20
     ports:
-      - "8081:8081"
+      - "19081:8081"
     depends_on:
       - mongo
     environment:

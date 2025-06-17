@@ -4,3 +4,5 @@ services/account-service/config/firebase-service-account.json
 services/account-service/config/firebase-service-account.json
 services/api-gateway/config/firebase-service-account.json
 firebase-service-account.json
+project_dump/
+create_dump.sh

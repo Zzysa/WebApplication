@@ -24,8 +24,13 @@ app.post("/api/auth/sync", verifyAuthToken, async (req, res, next) => {
 		});
 
 		console.log(`[SYNC] User from DB has role: ${user.role}`);
-		await admin.auth().setCustomUserClaims(uid, { role: user.role });
-		console.log(`[SYNC] Set custom claim for UID ${uid} with role: ${user.role}`);
+		
+		if (admin.isInitialized && admin.isInitialized()) {
+			await admin.auth().setCustomUserClaims(uid, { role: user.role });
+			console.log(`[SYNC] Set custom claim for UID ${uid} with role: ${user.role}`);
+		} else {
+			console.log(`[SYNC] Firebase not initialized, skipping custom claims for UID ${uid}`);
+		}
 
 		res.status(200).json({ message: "User synced successfully" });
 	} catch (error) {

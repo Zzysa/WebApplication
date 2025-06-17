@@ -3,7 +3,7 @@ const cors = require("cors");
 const axios = require("axios");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const checkAdmin = require("./middleware/auth-middleware.js");
+const checkAdmin = require("./middleware/checkAdmin.js");
 
 const app = express();
 const PORT = 8000;
@@ -132,14 +132,8 @@ app.use("/api/products",
 );
 
 app.use((err, req, res, next) => {
-	console.error("[API Gateway Error]", err);
-	if (err.response) {
-		return res.status(err.response.status).json(err.response.data);
-	}
-	if (err.status) {
-		return res.status(err.status).json({ message: err.message });
-	}
-	res.status(500).json({ message: "Internal Gateway Error" });
+	console.error(`[API Gateway Error] ${err.message}`);
+	res.status(500).json({ message: "Something went wrong!" });
 });
 
 app.listen(PORT, () => {

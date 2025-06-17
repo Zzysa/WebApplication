@@ -5,11 +5,19 @@ const mongoose = require("mongoose");
 
 const getProducts = async (req, res) => {
   try {
-    const { category, search, minPrice, maxPrice, inStock, sortBy, sortOrder = 'asc' } = req.query;
+    const { 
+      category, 
+      search, 
+      minPrice, 
+      maxPrice, 
+      inStock, 
+      sortBy = 'createdAt', 
+      sortOrder = 'desc' 
+    } = req.query;
     
     let filter = {};
     
-    if (category) {
+    if (category && category.trim()) {
       const orConditions = [{ slug: category }];
       if (mongoose.Types.ObjectId.isValid(category)) {
         orConditions.push({ _id: category });
@@ -23,18 +31,23 @@ const getProducts = async (req, res) => {
       }
     }
     
-    if (search) {
-      const searchRegex = new RegExp(search, 'i');
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
       filter.$or = [
         { name: { $regex: searchRegex } },
-        { description: { $regex: searchRegex } }
+        { description: { $regex: searchRegex } },
+        { tags: { $in: [searchRegex] } }
       ];
     }
     
     if (minPrice || maxPrice) {
       filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+      if (minPrice && !isNaN(parseFloat(minPrice))) {
+        filter.price.$gte = parseFloat(minPrice);
+      }
+      if (maxPrice && !isNaN(parseFloat(maxPrice))) {
+        filter.price.$lte = parseFloat(maxPrice);
+      }
     }
     
     if (inStock !== undefined) {
@@ -42,7 +55,8 @@ const getProducts = async (req, res) => {
     }
     
     let sort = {};
-    if (sortBy) {
+    const validSortFields = ['name', 'price', 'createdAt', 'updatedAt'];
+    if (validSortFields.includes(sortBy)) {
       sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
     } else {
       sort.createdAt = -1;
@@ -50,12 +64,13 @@ const getProducts = async (req, res) => {
     
     const products = await Product.find(filter)
       .populate('category', 'name slug')
-      .sort(sort);
+      .sort(sort)
+      .lean();
       
     res.status(200).json(products);
   } catch (error) {
     console.error("Error fetching products:", error);
-    res.status(500).json({ message: "Server Error" });
+    res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
 

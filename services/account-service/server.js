@@ -12,16 +12,42 @@ app.use(helmet());
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
+app.use((req, res, next) => {
+	res.set({
+		'Cache-Control': 'no-cache, no-store, must-revalidate',
+		'Pragma': 'no-cache',
+		'Expires': '0'
+	});
+	next();
+});
+
 app.use(express.json());
 
 app.post("/api/auth/sync", verifyAuthToken, async (req, res, next) => {
 	const { uid, email } = req.firebaseUser;
 	try {
-		const user = await prisma.user.upsert({
+		let user = await prisma.user.findUnique({
 			where: { firebaseUid: uid },
-			update: { email },
-			create: { firebaseUid: uid, email, role: "client" },
 		});
+
+		if (!user) {
+			const userByEmail = await prisma.user.findUnique({
+				where: { email: email },
+			});
+
+			if (userByEmail) {
+				user = await prisma.user.update({
+					where: { email: email },
+					data: { firebaseUid: uid },
+				});
+				console.log(`[SYNC] Linked existing user ${email} to new Firebase UID ${uid}`);
+			} else {
+				user = await prisma.user.create({
+					data: { firebaseUid: uid, email: email, role: "client" },
+				});
+				console.log(`[SYNC] Created new user ${email}`);
+			}
+		}
 
 		console.log(`[SYNC] User from DB has role: ${user.role}`);
 		
@@ -64,15 +90,12 @@ app.post("/api/orders",
 		body("products")
 			.isArray({ min: 1 })
 			.withMessage("Products must be a non-empty array"),
-		body("products.*.productId")
-			.isString()
-			.withMessage("Product ID is required"),
-		body("products.*.quantity")
-			.isInt({ min: 1 })
-			.withMessage("Quantity must be at least 1"),
 		body("totalPrice")
 			.isFloat({ gt: 0 })
 			.withMessage("Total price must be greater than 0"),
+		body("paymentMethod") 
+			.isIn(["card", "bank_transfer", "paypal"])
+			.withMessage("Invalid payment method selected"),
 	],
 	async (req, res, next) => {
 		const errors = validationResult(req);
@@ -83,7 +106,7 @@ app.post("/api/orders",
 			});
 		}
 
-		const { products, totalPrice } = req.body;
+		const { products, totalPrice, paymentMethod } = req.body; 
 		const userId = req.user.id;
 
 		try {
@@ -92,6 +115,8 @@ app.post("/api/orders",
 					userId: userId,
 					products: products,
 					totalPrice: totalPrice,
+					paymentMethod: paymentMethod, 
+					status: "pending_payment",    
 				},
 			});
 			res.status(201).json(order);
@@ -183,6 +208,137 @@ app.patch(
 			if (error.code === 'P2025') {
 				return res.status(404).json({ message: "Order not found" });
 			}
+			next(error);
+		}
+	}
+);
+
+app.post("/api/payments/process", 
+	verifyAuthToken, 
+	addUserToRequest,
+	[
+		body("orderId").isString().withMessage("Order ID is required"),
+		body("amount").isFloat({ gt: 0 }).withMessage("Amount must be greater than 0"),
+		body("method").isIn(["card", "bank_transfer", "paypal"]).withMessage("Invalid payment method"),
+	],
+	async (req, res, next) => {
+		const errors = validationResult(req);
+		if (!errors.isEmpty()) {
+			return res.status(400).json({ 
+				message: "Validation failed", 
+				errors: errors.array() 
+			});
+		}
+
+		const { orderId, amount, method } = req.body;
+		const userId = req.user.id;
+
+		try {
+			const order = await prisma.order.findFirst({
+				where: { id: orderId, userId: userId }
+			});
+
+			if (!order) {
+				return res.status(404).json({ message: "Order not found" });
+			}
+
+			const mockTransactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+			const mockGatewayResponse = {
+				gateway: "mock_payment_gateway",
+				status: "success",
+				fee: amount * 0.029,
+				currency: "USD"
+			};
+
+			const payment = await prisma.payment.create({
+				data: {
+					orderId: orderId,
+					amount: amount,
+					method: method,
+					status: "completed",
+					transactionId: mockTransactionId,
+					gatewayResponse: mockGatewayResponse
+				}
+			});
+
+			await prisma.order.update({
+				where: { id: orderId },
+				data: { 
+					paymentStatus: "completed",
+					transactionId: mockTransactionId,
+					status: "processing"
+				}
+			});
+
+			res.status(201).json(payment);
+		} catch (error) {
+			next(error);
+		}
+	}
+);
+
+app.get("/api/payments/order/:orderId", verifyAuthToken, addUserToRequest, async (req, res, next) => {
+	const { orderId } = req.params;
+	const userId = req.user.id;
+	const isAdmin = req.user.role === "admin";
+
+	try {
+		const where = isAdmin 
+			? { orderId } 
+			: { 
+				orderId, 
+				order: { userId } 
+			};
+
+		const payments = await prisma.payment.findMany({ 
+			where,
+			orderBy: { createdAt: 'desc' }
+		});
+		
+		res.status(200).json(payments);
+	} catch (error) {
+		next(error);
+	}
+});
+
+app.post("/api/payments/refund/:paymentId",
+	verifyAuthToken,
+	addUserToRequest,
+	checkRole("admin"),
+	async (req, res, next) => {
+		const { paymentId } = req.params;
+
+		try {
+			const payment = await prisma.payment.findUnique({
+				where: { id: paymentId }
+			});
+
+			if (!payment) {
+				return res.status(404).json({ message: "Payment not found" });
+			}
+
+			const refundTransactionId = `refund_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+			await prisma.payment.update({
+				where: { id: paymentId },
+				data: { 
+					status: "refunded",
+					gatewayResponse: {
+						...payment.gatewayResponse,
+						refund: {
+							id: refundTransactionId,
+							amount: payment.amount,
+							date: new Date().toISOString()
+						}
+					}
+				}
+			});
+
+			res.status(200).json({ 
+				message: "Refund processed successfully",
+				refundId: refundTransactionId 
+			});
+		} catch (error) {
 			next(error);
 		}
 	}

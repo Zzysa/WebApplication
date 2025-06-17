@@ -19,13 +19,31 @@ model User {
 }
 
 model Order {
-  id         String   @id @default(cuid())
-  userId     String
-  products   Json
-  totalPrice Float
-  status     String   @default("pending")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id @default(cuid())
+  userId        String
+  products      Json
+  totalPrice    Float
+  status        String   @default("pending_payment") 
+  paymentMethod String   
+  paymentStatus String   @default("pending")
+  transactionId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   
-  user       User     @relation(fields: [userId], references: [id])
+  user          User     @relation(fields: [userId], references: [id])
+  payments      Payment[]
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  orderId         String
+  amount          Float
+  method          String
+  status          String   @default("pending")
+  transactionId   String?
+  gatewayResponse Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  order           Order    @relation(fields: [orderId], references: [id])
 }

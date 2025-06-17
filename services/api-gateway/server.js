@@ -21,10 +21,12 @@ const corsOptions = {
 		if (!origin || whitelist.indexOf(origin) !== -1) {
 			callback(null, true);
 		} else {
-			callback(new Error("Not allowed by CORS"));
+			callback(null, true); 
 		}
 	},
 	credentials: true,
+	methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+	allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 app.use(limiter);
@@ -33,6 +35,22 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 const USER_SERVICE_URL = "http://account-service:3001";
+
+app.use("/api/payments", async (req, res, next) => {
+	try {
+		const url = `${USER_SERVICE_URL}${req.originalUrl}`;
+		const response = await axios({
+			method: req.method,
+			url,
+			data: req.body,
+			headers: { Authorization: req.headers.authorization },
+		});
+		res.status(response.status).json(response.data);
+	} catch (error) {
+		next(error);
+	}
+});
+
 const PRODUCT_SERVICE_URL = "http://product-service:3002";
 
 app.use("/api/auth", async (req, res, next) => {
@@ -46,9 +64,32 @@ app.use("/api/auth", async (req, res, next) => {
 app.use("/api/users", async (req, res, next) => {
 	try {
 		const url = `${USER_SERVICE_URL}${req.originalUrl}`;
-		const response = await axios({ method: req.method, url, data: req.body, headers: req.headers });
+		const response = await axios({ 
+			method: req.method, 
+			url, 
+			data: req.body, 
+			headers: {
+				...req.headers,
+				'Cache-Control': 'no-cache',
+				'Pragma': 'no-cache'
+			},
+			validateStatus: function (status) {
+				return status >= 200 && status < 500;
+			}
+		});
+		
+		if (response.status === 304) {
+			return res.status(200).json({ 
+				message: "User data not modified", 
+				cached: true 
+			});
+		}
+		
 		res.status(response.status).json(response.data);
-	} catch (error) { next(error); }
+	} catch (error) { 
+		console.error("[API Gateway] Users error:", error.response?.data || error.message);
+		next(error); 
+	}
 });
 
 app.use("/api/orders", async (req, res, next) => {
@@ -112,21 +153,21 @@ app.use("/api/products",
     },
     async (req, res, next) => {
         try {
-            const queryParams = { ...req.query };
-            if (queryParams.search && Array.isArray(queryParams.search)) {
-                queryParams.search = queryParams.search.join('');
-            }
-
-            const url = `${PRODUCT_SERVICE_URL}${req.originalUrl.split('?')[0]}`;
+            const url = `${PRODUCT_SERVICE_URL}/api/products`;
             const response = await axios({
                 method: req.method,
                 url: url,
                 data: req.body,
-                params: queryParams,
+                params: req.query, 
             });
             res.status(response.status).json(response.data);
         } catch (error) {
-            next(error);
+            console.error('[API Gateway] Products error:', error.response?.data || error.message);
+            if (error.response) {
+                res.status(error.response.status).json(error.response.data);
+            } else {
+                next(error);
+            }
         }
     }
 );

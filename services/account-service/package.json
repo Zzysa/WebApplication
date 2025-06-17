@@ -4,8 +4,12 @@
     "description": "Backend service for the project",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js",
-        "dev": "npx prisma generate && nodemon server.js"
+        "start": "npx prisma migrate deploy && node server.js",
+        "dev": "npx prisma generate && npx prisma migrate deploy && nodemon server.js",
+        "seed": "npx prisma db seed"
+    },
+    "prisma": {
+        "seed": "node prisma/seed.js"
     },
     "dependencies": {
         "@prisma/client": "^6.9.0",

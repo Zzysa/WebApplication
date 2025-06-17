@@ -28,6 +28,8 @@ function App() {
   const [adminOrders, setAdminOrders] = useState([]);
   const [view, setView] = useState("products");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("card");
+  const [couponCode, setCouponCode] = useState("");
+  const [discount, setDiscount] = useState(0);
 
   const [filters, setFilters] = useState({
     category: "",
@@ -65,6 +67,18 @@ function App() {
 		);
 	}
   }, [debouncedFilters]);
+
+  const applyCoupon = async () => {
+	try {
+	  const resp = await axios.post(`${API_GATEWAY_URL}/api/coupons/apply`, {
+		code: couponCode,
+		total: cart.reduce((s, i) => s + i.price * i.quantity, 0),
+	  });
+	  setDiscount(resp.data.discount);
+	} catch (e) {
+	  alert(e.response?.data?.message || "Invalid coupon");
+	}
+  };
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -650,13 +664,39 @@ function App() {
 				  ))}
 				</ul>
 				<p>
-				  Total: $
+				  Subtotal: $
 				  {cart
 					.reduce(
 					  (sum, item) => sum + item.price * item.quantity,
 					  0,
 					)
 					.toFixed(2)}
+				</p>
+  
+				<div className="coupon-section">
+				  <input
+					type="text"
+					placeholder="Enter coupon code"
+					value={couponCode}
+					onChange={(e) => setCouponCode(e.target.value)}
+				  />
+				  <button onClick={applyCoupon}>Apply</button>
+				</div>
+  
+				{discount > 0 && (
+				  <p className="discount-applied">
+					Discount: -${discount.toFixed(2)}
+				  </p>
+				)}
+  
+				<p className="final-total">
+				  Total: $
+				  {(
+					cart.reduce(
+					  (sum, item) => sum + item.price * item.quantity,
+					  0,
+					) - discount
+				  ).toFixed(2)}
 				</p>
   
 				<h4>Select Payment Method</h4>

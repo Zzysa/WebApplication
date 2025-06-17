@@ -45,6 +45,26 @@ async function main() {
     console.log(`Client user already exists: ${clientEmail}`);
   }
 
+  const testGmailEmail = "test@gmail.com";
+  const testGmailUid = "test-gmail-uid-789";
+
+  const existingTestGmail = await prisma.user.findFirst({
+    where: { email: testGmailEmail }
+  });
+
+  if (!existingTestGmail) {
+    const testGmailUser = await prisma.user.create({
+      data: {
+        firebaseUid: testGmailUid,
+        email: testGmailEmail,
+        role: "client"
+      }
+    });
+    console.log(`Created test gmail user: ${testGmailUser.email}`);
+  } else {
+    console.log(`Test gmail user already exists: ${testGmailEmail}`);
+  }
+
   console.log("Database seeding completed!");
 }
 

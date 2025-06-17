@@ -25,6 +25,8 @@ app.use(express.json());
 
 app.post("/api/auth/sync", verifyAuthToken, async (req, res, next) => {
 	const { uid, email } = req.firebaseUser;
+	console.log(`[SYNC] Processing user: ${email} with UID: ${uid}`);
+	
 	try {
 		let user = await prisma.user.findUnique({
 			where: { firebaseUid: uid },
@@ -40,13 +42,15 @@ app.post("/api/auth/sync", verifyAuthToken, async (req, res, next) => {
 					where: { email: email },
 					data: { firebaseUid: uid },
 				});
-				console.log(`[SYNC] Linked existing user ${email} to new Firebase UID ${uid}`);
+				console.log(`[SYNC] Linked existing user ${email} to Firebase UID ${uid}`);
 			} else {
 				user = await prisma.user.create({
 					data: { firebaseUid: uid, email: email, role: "client" },
 				});
-				console.log(`[SYNC] Created new user ${email}`);
+				console.log(`[SYNC] Created new user ${email} with role: client`);
 			}
+		} else {
+			console.log(`[SYNC] User ${email} already exists with role: ${user.role}`);
 		}
 
 		console.log(`[SYNC] User from DB has role: ${user.role}`);
@@ -58,8 +62,9 @@ app.post("/api/auth/sync", verifyAuthToken, async (req, res, next) => {
 			console.log(`[SYNC] Firebase not initialized, skipping custom claims for UID ${uid}`);
 		}
 
-		res.status(200).json({ message: "User synced successfully" });
+		res.status(200).json({ message: "User synced successfully", user: { email: user.email, role: user.role } });
 	} catch (error) {
+		console.error(`[SYNC] Error processing user ${email}:`, error);
 		next(error);
 	}
 });

@@ -3,26 +3,35 @@ const Category = require("../models/Category.js");
 const { validationResult } = require("express-validator");
 const mongoose = require("mongoose");
 
+const normalizeQueryParam = (param) => {
+  if (Array.isArray(param)) {
+    return param[param.length - 1];
+  }
+  return param;
+};
+
 const getProducts = async (req, res) => {
   try {
-    const { 
-      category, 
-      search, 
-      minPrice, 
-      maxPrice, 
-      inStock, 
-      sortBy = 'createdAt', 
-      sortOrder = 'desc' 
+    const {
+      category,
+      search,
+      minPrice,
+      maxPrice,
+      inStock,
+      sortBy = "createdAt",
+      sortOrder = "desc",
     } = req.query;
-    
+
     let filter = {};
-    
-    if (category && category.trim()) {
-      const orConditions = [{ slug: category }];
-      if (mongoose.Types.ObjectId.isValid(category)) {
-        orConditions.push({ _id: category });
+
+    const categoryParam = normalizeQueryParam(category);
+    if (categoryParam && typeof categoryParam === "string" && categoryParam.trim()) {
+      const categoryValue = categoryParam.trim();
+      const orConditions = [{ slug: categoryValue }];
+      if (mongoose.Types.ObjectId.isValid(categoryValue)) {
+        orConditions.push({ _id: categoryValue });
       }
-      
+
       const categoryDoc = await Category.findOne({ $or: orConditions });
       if (categoryDoc) {
         filter.category = categoryDoc._id;
@@ -30,43 +39,51 @@ const getProducts = async (req, res) => {
         return res.status(200).json([]);
       }
     }
-    
-    if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
+
+    const searchTerm = normalizeQueryParam(search);
+    if (searchTerm && typeof searchTerm === "string" && searchTerm.trim()) {
+      const searchRegex = new RegExp(searchTerm.trim(), "i");
       filter.$or = [
         { name: { $regex: searchRegex } },
         { description: { $regex: searchRegex } },
-        { tags: { $in: [searchRegex] } }
+        { tags: { $in: [searchRegex] } },
       ];
     }
-    
-    if (minPrice || maxPrice) {
+
+    const minPriceParam = normalizeQueryParam(minPrice);
+    const maxPriceParam = normalizeQueryParam(maxPrice);
+
+    if (minPriceParam || maxPriceParam) {
       filter.price = {};
-      if (minPrice && !isNaN(parseFloat(minPrice))) {
-        filter.price.$gte = parseFloat(minPrice);
+      if (minPriceParam && !isNaN(parseFloat(minPriceParam))) {
+        filter.price.$gte = parseFloat(minPriceParam);
       }
-      if (maxPrice && !isNaN(parseFloat(maxPrice))) {
-        filter.price.$lte = parseFloat(maxPrice);
+      if (maxPriceParam && !isNaN(parseFloat(maxPriceParam))) {
+        filter.price.$lte = parseFloat(maxPriceParam);
       }
     }
-    
-    if (inStock !== undefined) {
-      filter.inStock = inStock === 'true';
+
+    const inStockParam = normalizeQueryParam(inStock);
+    if (inStockParam !== undefined) {
+      filter.inStock = inStockParam === "true";
     }
-    
+
+    const sortByParam = normalizeQueryParam(sortBy) || "createdAt";
+    const sortOrderParam = normalizeQueryParam(sortOrder) || "desc";
+
     let sort = {};
-    const validSortFields = ['name', 'price', 'createdAt', 'updatedAt'];
-    if (validSortFields.includes(sortBy)) {
-      sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    const validSortFields = ["name", "price", "createdAt", "updatedAt"];
+    if (validSortFields.includes(sortByParam)) {
+      sort[sortByParam] = sortOrderParam === "desc" ? -1 : 1;
     } else {
       sort.createdAt = -1;
     }
-    
+
     const products = await Product.find(filter)
-      .populate('category', 'name slug')
+      .populate("category", "name slug")
       .sort(sort)
       .lean();
-      
+
     res.status(200).json(products);
   } catch (error) {
     console.error("Error fetching products:", error);

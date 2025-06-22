@@ -19,6 +19,7 @@ function App() {
   const [adminUserList, setAdminUserList] = useState(null);
   const [error, setError] = useState("");
   const [cart, setCart] = useState([]);
+  const [cartLoading, setCartLoading] = useState(false);
   const [newProductName, setNewProductName] = useState("");
   const [newProductPrice, setNewProductPrice] = useState("");
   const [newProductDesc, setNewProductDesc] = useState("");
@@ -46,38 +47,57 @@ function App() {
   const [newCategoryDesc, setNewCategoryDesc] = useState("");
 
   const fetchProducts = useCallback(async () => {
-	try {
-		const cleanParams = Object.fromEntries(
-			Object.entries(debouncedFilters).filter(
-				([_, value]) => value !== "" && value !== null && value !== undefined,
-			),
-		);
+    try {
+      const cleanParams = Object.fromEntries(
+        Object.entries(debouncedFilters).filter(
+          ([_, value]) => value !== "" && value !== null && value !== undefined,
+        ),
+      );
 
-		const response = await axios.get(`${API_GATEWAY_URL}/api/products`, {
-			params: cleanParams,
-		});
+      const response = await axios.get(`${API_GATEWAY_URL}/api/products`, {
+        params: cleanParams,
+      });
 
-		setProducts(response.data);
-		setError("");
-	} catch (err) {
-		console.error("Error fetching products:", err);
-		setError(
-			"Could not fetch products: " +
-				(err.response?.data?.message || err.message),
-		);
-	}
+      setProducts(response.data);
+      setError("");
+    } catch (err) {
+      console.error("Error fetching products:", err);
+      setError(
+        "Could not fetch products: " +
+          (err.response?.data?.message || err.message),
+      );
+    }
   }, [debouncedFilters]);
 
+  const fetchCart = useCallback(async () => {
+    if (!user) return;
+    
+    setCartLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const response = await axios.get(`${API_GATEWAY_URL}/api/cart`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      setCart(response.data);
+    } catch (err) {
+      console.error("Error fetching cart:", err);
+      setError("Could not fetch cart");
+    } finally {
+      setCartLoading(false);
+    }
+  }, [user]);
+
   const applyCoupon = async () => {
-	try {
-	  const resp = await axios.post(`${API_GATEWAY_URL}/api/coupons/apply`, {
-		code: couponCode,
-		total: cart.reduce((s, i) => s + i.price * i.quantity, 0),
-	  });
-	  setDiscount(resp.data.discount);
-	} catch (e) {
-	  alert(e.response?.data?.message || "Invalid coupon");
-	}
+    try {
+      const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+      const resp = await axios.post(`${API_GATEWAY_URL}/api/coupons/apply`, {
+        code: couponCode,
+        total: cartTotal,
+      });
+      setDiscount(resp.data.discount);
+    } catch (e) {
+      alert(e.response?.data?.message || "Invalid coupon");
+    }
   };
 
   const fetchCategories = useCallback(async () => {
@@ -119,63 +139,64 @@ function App() {
   }, [user, userData]);
 
   useEffect(() => {
-	const fetchAndSetUserData = async (firebaseUser) => {
-	  try {
-		const idToken = await firebaseUser.getIdToken(true);
-		
-		await axios.post(
-		  `${API_GATEWAY_URL}/api/auth/sync`,
-		  {},
-		  { 
-			headers: { Authorization: `Bearer ${idToken}` },
-			timeout: 10000
-		  },
-		);
-		
-		const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
-		  headers: { Authorization: `Bearer ${idToken}` },
-		  timeout: 10000
-		});
-		
-		setUserData(response.data);
-	  } catch (err) {
-		console.error("User data fetch error:", err);
-		if (err.response?.status === 304) {
-		  console.log("User data not modified, using cached data");
-		  return;
-		}
-		setError("Could not sync or fetch user data.");
-	  }
-	};
+    const fetchAndSetUserData = async (firebaseUser) => {
+      try {
+        const idToken = await firebaseUser.getIdToken(true);
+        
+        await axios.post(
+          `${API_GATEWAY_URL}/api/auth/sync`,
+          {},
+          { 
+            headers: { Authorization: `Bearer ${idToken}` },
+            timeout: 10000
+          },
+        );
+        
+        const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+          timeout: 10000
+        });
+        
+        setUserData(response.data);
+      } catch (err) {
+        console.error("User data fetch error:", err);
+        if (err.response?.status === 304) {
+          console.log("User data not modified, using cached data");
+          return;
+        }
+        setError("Could not sync or fetch user data.");
+      }
+    };
   
-	const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-	  setUser(currentUser);
-	  setCart([]);
-	  if (!currentUser) {
-		setUserData(null);
-		setAdminUserList(null);
-		setUserOrders([]);
-		setAdminOrders([]);
-		setError("");
-		setLoading(false);
-	  } else {
-		fetchAndSetUserData(currentUser).finally(() => setLoading(false));
-	  }
-	});
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (!currentUser) {
+        setUserData(null);
+        setAdminUserList(null);
+        setUserOrders([]);
+        setAdminOrders([]);
+        setCart([]);
+        setError("");
+        setLoading(false);
+      } else {
+        fetchAndSetUserData(currentUser).finally(() => setLoading(false));
+      }
+    });
   
-	fetchProducts();
-	fetchCategories();
-	return () => unsubscribe();
+    fetchProducts();
+    fetchCategories();
+    return () => unsubscribe();
   }, [fetchProducts, fetchCategories]);
 
   useEffect(() => {
     if (user && userData) {
       fetchUserOrders();
+      fetchCart();
       if (userData.role === "admin") {
         fetchAdminOrders();
       }
     }
-  }, [user, userData, fetchUserOrders, fetchAdminOrders]);
+  }, [user, userData, fetchUserOrders, fetchAdminOrders, fetchCart]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -312,21 +333,77 @@ function App() {
     setNewProductCategory("");
   };
 
-  const handleAddToCart = (product) => {
-    setCart((prevCart) => {
-      const existingProduct = prevCart.find(
-        (item) => item._id === product._id,
+  const handleAddToCart = async (product) => {
+    if (!user) {
+      setError("Please log in to add items to cart");
+      return;
+    }
+
+    try {
+      const idToken = await user.getIdToken();
+      const cartItem = {
+        productId: product._id,
+        productName: product.name,
+        price: product.price,
+        quantity: 1,
+        imageUrl: product.imageUrl
+      };
+
+      await axios.post(`${API_GATEWAY_URL}/api/cart/add`, cartItem, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+
+      fetchCart();
+    } catch (err) {
+      console.error("Error adding to cart:", err);
+      setError("Could not add item to cart");
+    }
+  };
+
+  const handleUpdateCartQuantity = async (itemId, newQuantity) => {
+    if (!user) return;
+
+    try {
+      const idToken = await user.getIdToken();
+      await axios.put(`${API_GATEWAY_URL}/api/cart/${itemId}`, 
+        { quantity: newQuantity },
+        { headers: { Authorization: `Bearer ${idToken}` } }
       );
-      if (existingProduct) {
-        return prevCart.map((item) =>
-          item._id === product._id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
-        );
-      } else {
-        return [...prevCart, { ...product, quantity: 1 }];
-      }
-    });
+      fetchCart();
+    } catch (err) {
+      console.error("Error updating cart:", err);
+      setError("Could not update cart item");
+    }
+  };
+
+  const handleRemoveFromCart = async (itemId) => {
+    if (!user) return;
+
+    try {
+      const idToken = await user.getIdToken();
+      await axios.delete(`${API_GATEWAY_URL}/api/cart/${itemId}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      fetchCart();
+    } catch (err) {
+      console.error("Error removing from cart:", err);
+      setError("Could not remove item from cart");
+    }
+  };
+
+  const handleClearCart = async () => {
+    if (!user) return;
+
+    try {
+      const idToken = await user.getIdToken();
+      await axios.delete(`${API_GATEWAY_URL}/api/cart/clear`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      setCart([]);
+    } catch (err) {
+      console.error("Error clearing cart:", err);
+      setError("Could not clear cart");
+    }
   };
 
   const handleProceedToCheckout = () => {
@@ -344,26 +421,25 @@ function App() {
     }
     try {
       const idToken = await user.getIdToken();
+      
+      const orderProducts = cart.map((item) => ({
+        productId: item.productId,
+        name: item.productName,
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       const orderData = {
-        products: cart.map((item) => ({
-          productId: item._id,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-        })),
-        totalPrice: cart.reduce(
-          (sum, item) => sum + item.price * item.quantity,
-          0,
-        ),
+        products: orderProducts,
+        totalPrice: cartTotal - discount,
         paymentMethod: selectedPaymentMethod,
       };
 
       const orderResponse = await axios.post(
         `${API_GATEWAY_URL}/api/orders`,
         orderData,
-        {
-          headers: { Authorization: `Bearer ${idToken}` },
-        },
+        { headers: { Authorization: `Bearer ${idToken}` } }
       );
 
       const newOrder = orderResponse.data;
@@ -377,15 +453,16 @@ function App() {
       await axios.post(
         `${API_GATEWAY_URL}/api/payments/process`,
         paymentData,
-        {
-          headers: { Authorization: `Bearer ${idToken}` },
-        },
+        { headers: { Authorization: `Bearer ${idToken}` } }
       );
 
+      await handleClearCart();
+      
       alert("Order placed and payment processed successfully!");
-      setCart([]);
       fetchUserOrders();
       setView("orders");
+      setDiscount(0);
+      setCouponCode("");
     } catch (err) {
       setError("Failed to place order or process payment.");
       console.error(err);
@@ -455,508 +532,540 @@ function App() {
   }
 
   return (
-	<div className="App">
-	  <header className="App-header">
-		<h1>Microservice Shop</h1>
-		{user && userData ? (
-		  <div className="user-section">
-			<p>
-			  Hello, <strong>{getUsername(user.email)}</strong>! (Role:{" "}
-			  {userData.role})
-			</p>
-			<button onClick={handleLogout}>Logout</button>
-		  </div>
-		) : (
-		  <p className="guest-section">
-			Welcome, Guest! Please log in or register.
-		  </p>
-		)}
-	  </header>
+    <div className="App">
+      <header className="App-header">
+        <h1>Microservice Shop</h1>
+        {user && userData ? (
+          <div className="user-section">
+            <p>
+              Hello, <strong>{getUsername(user.email)}</strong>! (Role:{" "}
+              {userData.role})
+            </p>
+            <button onClick={handleLogout}>Logout</button>
+          </div>
+        ) : (
+          <p className="guest-section">
+            Welcome, Guest! Please log in or register.
+          </p>
+        )}
+      </header>
   
-	  <main>
-		{user ? (
-		  <>
-			<div className="navigation-tabs">
-			  <button onClick={() => setView("products")}>Products</button>
-			  <button onClick={() => setView("cart")}>
-				Cart ({cart.length})
-			  </button>
-			  <button
-				onClick={() => {
-				  setView("orders");
-				  fetchUserOrders();
-				}}
-			  >
-				My Orders
-			  </button>
-			  {userData?.role === "admin" && (
-				<>
-				  <button
-					onClick={() => {
-					  setView("admin-orders");
-					  fetchAdminOrders();
-					}}
-				  >
-					Manage Orders
-				  </button>
-				  <button onClick={() => setView("admin-panel")}>
-					Admin Panel
-				  </button>
-				</>
-			  )}
-			</div>
+      <main>
+        {user ? (
+          <>
+            <div className="navigation-tabs">
+              <button onClick={() => setView("products")}>Products</button>
+              <button onClick={() => setView("cart")}>
+                Cart ({cart.length})
+              </button>
+              <button
+                onClick={() => {
+                  setView("orders");
+                  fetchUserOrders();
+                }}
+              >
+                My Orders
+              </button>
+              {userData?.role === "admin" && (
+                <>
+                  <button
+                    onClick={() => {
+                      setView("admin-orders");
+                      fetchAdminOrders();
+                    }}
+                  >
+                    Manage Orders
+                  </button>
+                  <button onClick={() => setView("admin-panel")}>
+                    Admin Panel
+                  </button>
+                </>
+              )}
+            </div>
   
-			{view === "products" && (
-			  <>
-				<div className="filters-section">
-				  <h3>Filters & Search</h3>
-				  <div className="filters-row">
-					<input
-					  type="text"
-					  placeholder="Search products..."
-					  value={filters.search}
-					  onChange={(e) =>
-						handleFilterChange("search", e.target.value)
-					  }
-					/>
-					<select
-					  value={filters.category}
-					  onChange={(e) =>
-						handleFilterChange("category", e.target.value)
-					  }
-					>
-					  <option value="">All Categories</option>
-					  {categories.map((cat) => (
-						<option key={cat._id} value={cat._id}>
-						  {cat.name}
-						</option>
-					  ))}
-					</select>
-					<input
-					  type="number"
-					  placeholder="Min Price"
-					  value={filters.minPrice}
-					  onChange={(e) =>
-						handleFilterChange("minPrice", e.target.value)
-					  }
-					/>
-					<input
-					  type="number"
-					  placeholder="Max Price"
-					  value={filters.maxPrice}
-					  onChange={(e) =>
-						handleFilterChange("maxPrice", e.target.value)
-					  }
-					/>
-					<select
-					  value={`${filters.sortBy}-${filters.sortOrder}`}
-					  onChange={(e) => {
-						const [sortBy, sortOrder] = e.target.value.split("-");
-						handleFilterChange("sortBy", sortBy);
-						handleFilterChange("sortOrder", sortOrder);
-					  }}
-					>
-					  <option value="createdAt-desc">Newest First</option>
-					  <option value="createdAt-asc">Oldest First</option>
-					  <option value="name-asc">Name A-Z</option>
-					  <option value="name-desc">Name Z-A</option>
-					  <option value="price-asc">Price Low to High</option>
-					  <option value="price-desc">Price High to Low</option>
-					</select>
-					<button onClick={clearFilters}>Clear Filters</button>
-				  </div>
-				</div>
+            {view === "products" && (
+              <>
+                <div className="filters-section">
+                  <h3>Filters & Search</h3>
+                  <div className="filters-row">
+                    <input
+                      type="text"
+                      placeholder="Search products..."
+                      value={filters.search}
+                      onChange={(e) =>
+                        handleFilterChange("search", e.target.value)
+                      }
+                    />
+                    <select
+                      value={filters.category}
+                      onChange={(e) =>
+                        handleFilterChange("category", e.target.value)
+                      }
+                    >
+                      <option value="">All Categories</option>
+                      {categories.map((cat) => (
+                        <option key={cat._id} value={cat._id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      placeholder="Min Price"
+                      value={filters.minPrice}
+                      onChange={(e) =>
+                        handleFilterChange("minPrice", e.target.value)
+                      }
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max Price"
+                      value={filters.maxPrice}
+                      onChange={(e) =>
+                        handleFilterChange("maxPrice", e.target.value)
+                      }
+                    />
+                    <select
+                      value={`${filters.sortBy}-${filters.sortOrder}`}
+                      onChange={(e) => {
+                        const [sortBy, sortOrder] = e.target.value.split("-");
+                        handleFilterChange("sortBy", sortBy);
+                        handleFilterChange("sortOrder", sortOrder);
+                      }}
+                    >
+                      <option value="createdAt-desc">Newest First</option>
+                      <option value="createdAt-asc">Oldest First</option>
+                      <option value="name-asc">Name A-Z</option>
+                      <option value="name-desc">Name Z-A</option>
+                      <option value="price-asc">Price Low to High</option>
+                      <option value="price-desc">Price High to Low</option>
+                    </select>
+                    <button onClick={clearFilters}>Clear Filters</button>
+                  </div>
+                </div>
   
-				<div className="product-list">
-				  <h2>Our Products</h2>
-				  {products.length > 0 ? (
-					<div className="products-grid">
-					  {products.map((product) => (
-						<div key={product._id} className="product-card">
-						  <img
-							src={
-							  product.imageUrl ||
-							  "https://via.placeholder.com/150"
-							}
-							alt={product.name}
-							className="product-image"
-						  />
-						  <h3>{product.name}</h3>
-						  {product.category && (
-							<p className="product-category">
-							  Category: {product.category.name}
-							</p>
-						  )}
-						  <p>{product.description}</p>
-						  <p className="price">${product.price.toFixed(2)}</p>
-						  <button
-							className="add-to-cart-button"
-							onClick={() => handleAddToCart(product)}
-						  >
-							Add to Cart
-						  </button>
-						  {userData?.role === "admin" && (
-							<div className="admin-buttons">
-							  <button
-								className="edit-button"
-								onClick={() => handleEditClick(product)}
-							  >
-								Edit
-							  </button>
-							  <button
-								className="delete-button"
-								onClick={() => handleDeleteProduct(product._id)}
-							  >
-								Delete
-							  </button>
-							</div>
-						  )}
-						</div>
-					  ))}
-					</div>
-				  ) : (
-					<p>No products found.</p>
-				  )}
-				</div>
-			  </>
-			)}
+                <div className="product-list">
+                  <h2>Our Products</h2>
+                  {products.length > 0 ? (
+                    <div className="products-grid">
+                      {products.map((product) => (
+                        <div key={product._id} className="product-card">
+                          <img
+                            src={
+                              product.imageUrl ||
+                              "https://via.placeholder.com/150"
+                            }
+                            alt={product.name}
+                            className="product-image"
+                          />
+                          <h3>{product.name}</h3>
+                          {product.category && (
+                            <p className="product-category">
+                              Category: {product.category.name}
+                            </p>
+                          )}
+                          <p>{product.description}</p>
+                          <p className="price">${product.price.toFixed(2)}</p>
+                          <button
+                            className="add-to-cart-button"
+                            onClick={() => handleAddToCart(product)}
+                          >
+                            Add to Cart
+                          </button>
+                          {userData?.role === "admin" && (
+                            <div className="admin-buttons">
+                              <button
+                                className="edit-button"
+                                onClick={() => handleEditClick(product)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="delete-button"
+                                onClick={() => handleDeleteProduct(product._id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No products found.</p>
+                  )}
+                </div>
+              </>
+            )}
   
-			{view === "cart" && (
-			  <div className="cart-section">
-				<h3>Your Cart</h3>
-				{cart.length > 0 ? (
-				  <>
-					<ul>
-					  {cart.map((item) => (
-						<li key={item._id}>
-						  {item.name} - ${item.price} x {item.quantity}
-						</li>
-					  ))}
-					</ul>
-					<p>
-					  Total: $
-					  {cart
-						.reduce(
-						  (sum, item) => sum + item.price * item.quantity,
-						  0,
-						)
-						.toFixed(2)}
-					</p>
-					<button onClick={handleProceedToCheckout}>
-					  Proceed to Checkout
-					</button>
-				  </>
-				) : (
-				  <p>Your cart is empty.</p>
-				)}
-			  </div>
-			)}
+            {view === "cart" && (
+              <div className="cart-section">
+                <h3>Your Cart</h3>
+                {cartLoading ? (
+                  <p>Loading cart...</p>
+                ) : cart.length > 0 ? (
+                  <>
+                    <div style={{ marginBottom: "20px" }}>
+                      {cart.map((item) => (
+                        <div key={item.id} style={{ border: "1px solid #ddd", padding: "15px", margin: "10px 0", borderRadius: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <h4 style={{ margin: "0 0 5px 0" }}>{item.productName}</h4>
+                            <p style={{ margin: "0", color: "#666" }}>${item.price.toFixed(2)} each</p>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <button 
+                              onClick={() => handleUpdateCartQuantity(item.id, Math.max(1, item.quantity - 1))}
+                              disabled={item.quantity <= 1}
+                              style={{ padding: "5px 10px" }}
+                            >
+                              -
+                            </button>
+                            <span style={{ fontWeight: "bold", minWidth: "30px", textAlign: "center" }}>{item.quantity}</span>
+                            <button 
+                              onClick={() => handleUpdateCartQuantity(item.id, item.quantity + 1)}
+                              style={{ padding: "5px 10px" }}
+                            >
+                              +
+                            </button>
+                            <button 
+                              onClick={() => handleRemoveFromCart(item.id)}
+                              style={{ marginLeft: "10px", background: "#dc3545", color: "white", border: "none", padding: "5px 10px", borderRadius: "4px" }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div style={{ fontWeight: "bold", fontSize: "1.1em" }}>
+                            ${(item.price * item.quantity).toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ textAlign: "center", padding: "20px", borderTop: "2px solid #ddd" }}>
+                      <p style={{ fontSize: "1.3em", fontWeight: "bold", marginBottom: "20px" }}>
+                        Total: ${cart.reduce((sum, item) => sum + (item.price * item.quantity), 0).toFixed(2)}
+                      </p>
+                      <button onClick={handleProceedToCheckout} style={{ padding: "10px 20px", marginRight: "10px" }}>
+                        Proceed to Checkout
+                      </button>
+                      <button 
+                        onClick={handleClearCart} 
+                        style={{ background: "#6c757d", color: "white", border: "none", padding: "10px 20px", borderRadius: "4px" }}
+                      >
+                        Clear Cart
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p>Your cart is empty.</p>
+                )}
+              </div>
+            )}
   
-			{view === "checkout" && (
-			  <div className="checkout-section">
-				<h3>Checkout</h3>
-				<h4>Order Summary</h4>
-				<ul>
-				  {cart.map((item) => (
-					<li key={item._id}>
-					  {item.name} - ${item.price} x {item.quantity}
-					</li>
-				  ))}
-				</ul>
-				<p>
-				  Subtotal: $
-				  {cart
-					.reduce(
-					  (sum, item) => sum + item.price * item.quantity,
-					  0,
-					)
-					.toFixed(2)}
-				</p>
+            {view === "checkout" && (
+              <div className="checkout-section">
+                <h3>Checkout</h3>
+                <h4>Order Summary</h4>
+                <ul>
+                  {cart.map((item) => (
+                    <li key={item.id}>
+                      {item.productName} - ${item.price} x {item.quantity}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  Subtotal: $
+                  {cart
+                    .reduce(
+                      (sum, item) => sum + item.price * item.quantity,
+                      0,
+                    )
+                    .toFixed(2)}
+                </p>
   
-				<div className="coupon-section">
-				  <input
-					type="text"
-					placeholder="Enter coupon code"
-					value={couponCode}
-					onChange={(e) => setCouponCode(e.target.value)}
-				  />
-				  <button onClick={applyCoupon}>Apply</button>
-				</div>
+                <div className="coupon-section">
+                  <input
+                    type="text"
+                    placeholder="Enter coupon code"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value)}
+                  />
+                  <button onClick={applyCoupon}>Apply</button>
+                </div>
   
-				{discount > 0 && (
-				  <p className="discount-applied">
-					Discount: -${discount.toFixed(2)}
-				  </p>
-				)}
+                {discount > 0 && (
+                  <p className="discount-applied">
+                    Discount: -${discount.toFixed(2)}
+                  </p>
+                )}
   
-				<p className="final-total">
-				  Total: $
-				  {(
-					cart.reduce(
-					  (sum, item) => sum + item.price * item.quantity,
-					  0,
-					) - discount
-				  ).toFixed(2)}
-				</p>
+                <p className="final-total">
+                  Total: $
+                  {(
+                    cart.reduce(
+                      (sum, item) => sum + item.price * item.quantity,
+                      0,
+                    ) - discount
+                  ).toFixed(2)}
+                </p>
   
-				<h4>Select Payment Method</h4>
-				<div className="payment-methods">
-				  <label>
-					<input
-					  type="radio"
-					  value="card"
-					  checked={selectedPaymentMethod === "card"}
-					  onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-					/>
-					Credit Card
-				  </label>
-				  <label>
-					<input
-					  type="radio"
-					  value="paypal"
-					  checked={selectedPaymentMethod === "paypal"}
-					  onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-					/>
-					PayPal
-				  </label>
-				  <label>
-					<input
-					  type="radio"
-					  value="bank_transfer"
-					  checked={selectedPaymentMethod === "bank_transfer"}
-					  onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-					/>
-					Bank Transfer
-				  </label>
-				</div>
-				<button onClick={handleConfirmAndPay}>Confirm & Pay</button>
-				<button onClick={() => setView("cart")}>Back to Cart</button>
-			  </div>
-			)}
+                <h4>Select Payment Method</h4>
+                <div className="payment-methods">
+                  <label>
+                    <input
+                      type="radio"
+                      value="card"
+                      checked={selectedPaymentMethod === "card"}
+                      onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                    />
+                    Credit Card
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      value="paypal"
+                      checked={selectedPaymentMethod === "paypal"}
+                      onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                    />
+                    PayPal
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      value="bank_transfer"
+                      checked={selectedPaymentMethod === "bank_transfer"}
+                      onChange={(e) => setSelectedPaymentMethod(e.target.value)}
+                    />
+                    Bank Transfer
+                  </label>
+                </div>
+                <button onClick={handleConfirmAndPay}>Confirm & Pay</button>
+                <button onClick={() => setView("cart")}>Back to Cart</button>
+              </div>
+            )}
   
-			{view === "orders" && (
-			  <div className="orders-section">
-				<h3>My Orders</h3>
-				{userOrders.length > 0 ? (
-				  <div className="orders-list">
-					{userOrders.map((order) => (
-					  <div key={order.id} className="order-card">
-						<div className="order-header">
-						  <h4>Order #{order.id.slice(-8)}</h4>
-						  <span
-							className="order-status"
-							style={{ color: getStatusColor(order.status) }}
-						  >
-							{order.status.toUpperCase()}
-						  </span>
-						</div>
-						<p className="order-date">
-						  Placed: {formatDate(order.createdAt)}
-						</p>
-						<div className="order-payment-status">
-						  Payment:{" "}
-						  <strong>{order.paymentStatus?.toUpperCase()}</strong>{" "}
-						  via {order.paymentMethod}
-						</div>
-						<div className="order-products">
-						  {order.products.map((product, index) => (
-							<div key={index} className="order-product">
-							  {product.name} x{product.quantity} - $
-							  {product.price}
-							</div>
-						  ))}
-						</div>
-						<p className="order-total">
-						  Total: ${order.totalPrice.toFixed(2)}
-						</p>
-					  </div>
-					))}
-				  </div>
-				) : (
-				  <p>You have no orders yet.</p>
-				)}
-			  </div>
-			)}
+            {view === "orders" && (
+              <div className="orders-section">
+                <h3>My Orders</h3>
+                {userOrders.length > 0 ? (
+                  <div className="orders-list">
+                    {userOrders.map((order) => (
+                      <div key={order.id} className="order-card">
+                        <div className="order-header">
+                          <h4>Order #{order.id.slice(-8)}</h4>
+                          <span
+                            className="order-status"
+                            style={{ color: getStatusColor(order.status) }}
+                          >
+                            {order.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="order-date">
+                          Placed: {formatDate(order.createdAt)}
+                        </p>
+                        <div className="order-payment-status">
+                          Payment:{" "}
+                          <strong>{order.paymentStatus?.toUpperCase()}</strong>{" "}
+                          via {order.paymentMethod}
+                        </div>
+                        <div className="order-products">
+                          {order.products.map((product, index) => (
+                            <div key={index} className="order-product">
+                              {product.name} x{product.quantity} - $
+                              {product.price}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="order-total">
+                          Total: ${order.totalPrice.toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>You have no orders yet.</p>
+                )}
+              </div>
+            )}
   
-			{view === "admin-orders" && userData?.role === "admin" && (
-			  <div className="admin-orders-section">
-				<h3>Manage All Orders</h3>
-				{adminOrders.length > 0 ? (
-				  <div className="admin-orders-list">
-					{adminOrders.map((order) => (
-					  <div key={order.id} className="admin-order-card">
-						<div className="order-header">
-						  <h4>Order #{order.id.slice(-8)}</h4>
-						  <div className="order-controls">
-							<select
-							  value={order.status}
-							  onChange={(e) =>
-								handleUpdateOrderStatus(order.id, e.target.value)
-							  }
-							  className="status-select"
-							>
-							  <option value="pending_payment">
-								Pending Payment
-							  </option>
-							  <option value="pending">Pending</option>
-							  <option value="processing">Processing</option>
-							  <option value="shipped">Shipped</option>
-							  <option value="delivered">Delivered</option>
-							  <option value="cancelled">Cancelled</option>
-							</select>
-						  </div>
-						</div>
-						<p className="order-customer">
-						  Customer: {order.user.email}
-						</p>
-						<p className="order-date">
-						  Placed: {formatDate(order.createdAt)}
-						</p>
-						<div className="order-products">
-						  {order.products.map((product, index) => (
-							<div key={index} className="order-product">
-							  {product.name} x{product.quantity} - $
-							  {product.price}
-							</div>
-						  ))}
-						</div>
-						<p className="order-total">
-						  Total: ${order.totalPrice.toFixed(2)}
-						</p>
-					  </div>
-					))}
-				  </div>
-				) : (
-				  <p>No orders found.</p>
-				)}
-			  </div>
-			)}
+            {view === "admin-orders" && userData?.role === "admin" && (
+              <div className="admin-orders-section">
+                <h3>Manage All Orders</h3>
+                {adminOrders.length > 0 ? (
+                  <div className="admin-orders-list">
+                    {adminOrders.map((order) => (
+                      <div key={order.id} className="admin-order-card">
+                        <div className="order-header">
+                          <h4>Order #{order.id.slice(-8)}</h4>
+                          <div className="order-controls">
+                            <select
+                              value={order.status}
+                              onChange={(e) =>
+                                handleUpdateOrderStatus(order.id, e.target.value)
+                              }
+                              className="status-select"
+                            >
+                              <option value="pending_payment">
+                                Pending Payment
+                              </option>
+                              <option value="pending">Pending</option>
+                              <option value="processing">Processing</option>
+                              <option value="shipped">Shipped</option>
+                              <option value="delivered">Delivered</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                        </div>
+                        <p className="order-customer">
+                          Customer: {order.user.email}
+                        </p>
+                        <p className="order-date">
+                          Placed: {formatDate(order.createdAt)}
+                        </p>
+                        <div className="order-products">
+                          {order.products.map((product, index) => (
+                            <div key={index} className="order-product">
+                              {product.name} x{product.quantity} - $
+                              {product.price}
+                            </div>
+                          ))}
+                        </div>
+                        <p className="order-total">
+                          Total: ${order.totalPrice.toFixed(2)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No orders found.</p>
+                )}
+              </div>
+            )}
   
-			{view === "admin-panel" && userData?.role === "admin" && (
-			  <div className="admin-panel">
-				<h3>Admin Panel</h3>
+            {view === "admin-panel" && userData?.role === "admin" && (
+              <div className="admin-panel">
+                <h3>Admin Panel</h3>
   
-				<div className="admin-section">
-				  <h4>Category Management</h4>
-				  <form
-					onSubmit={handleCreateCategory}
-					className="category-form"
-				  >
-					<input
-					  type="text"
-					  placeholder="Category Name"
-					  value={newCategoryName}
-					  onChange={(e) => setNewCategoryName(e.target.value)}
-					  required
-					/>
-					<textarea
-					  placeholder="Category Description (optional)"
-					  value={newCategoryDesc}
-					  onChange={(e) => setNewCategoryDesc(e.target.value)}
-					></textarea>
-					<button type="submit">Create Category</button>
-				  </form>
-				</div>
+                <div className="admin-section">
+                  <h4>Category Management</h4>
+                  <form
+                    onSubmit={handleCreateCategory}
+                    className="category-form"
+                  >
+                    <input
+                      type="text"
+                      placeholder="Category Name"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      required
+                    />
+                    <textarea
+                      placeholder="Category Description (optional)"
+                      value={newCategoryDesc}
+                      onChange={(e) => setNewCategoryDesc(e.target.value)}
+                    ></textarea>
+                    <button type="submit">Create Category</button>
+                  </form>
+                </div>
   
-				<button onClick={fetchAdminUserList}>Fetch All Users</button>
-				{adminUserList && (
-				  <div>
-					<h4>All Users List:</h4>
-					<pre className="data-preview">
-					  {JSON.stringify(adminUserList, null, 2)}
-					</pre>
-				  </div>
-				)}
+                <button onClick={fetchAdminUserList}>Fetch All Users</button>
+                {adminUserList && (
+                  <div>
+                    <h4>All Users List:</h4>
+                    <pre className="data-preview">
+                      {JSON.stringify(adminUserList, null, 2)}
+                    </pre>
+                  </div>
+                )}
   
-				<form
-				  onSubmit={
-					editingProduct ? handleUpdateProduct : handleCreateProduct
-				  }
-				  className="product-form"
-				>
-				  <h4>
-					{editingProduct ? "Edit Product" : "Create New Product"}
-				  </h4>
-				  <input
-					type="text"
-					placeholder="Product Name"
-					value={newProductName}
-					onChange={(e) => setNewProductName(e.target.value)}
-					required
-				  />
-				  <input
-					type="number"
-					step="0.01"
-					placeholder="Price"
-					value={newProductPrice}
-					onChange={(e) => setNewProductPrice(e.target.value)}
-					required
-				  />
-				  <select
-					value={newProductCategory}
-					onChange={(e) => setNewProductCategory(e.target.value)}
-				  >
-					<option value="">Select Category (optional)</option>
-					{categories.map((cat) => (
-					  <option key={cat._id} value={cat._id}>
-						{cat.name}
-					  </option>
-					))}
-				  </select>
-				  <textarea
-					placeholder="Description"
-					value={newProductDesc}
-					onChange={(e) => setNewProductDesc(e.target.value)}
-					required
-				  ></textarea>
-				  <div className="form-buttons">
-					<button type="submit">
-					  {editingProduct ? "Update Product" : "Create Product"}
-					</button>
-					{editingProduct && (
-					  <button type="button" onClick={cancelEdit}>
-						Cancel Edit
-					  </button>
-					)}
-				  </div>
-				</form>
-			  </div>
-			)}
-		  </>
-		) : (
-		  <div className="centered-content">
-			{showLogin ? (
-			  <>
-				<Login />
-				<p>
-				  No account?{" "}
-				  <button
-					className="link-button"
-					onClick={() => setShowLogin(false)}
-				  >
-					Register here
-				  </button>
-				</p>
-			  </>
-			) : (
-			  <>
-				<Register />
-				<p>
-				  Already have an account?{" "}
-				  <button
-					className="link-button"
-					onClick={() => setShowLogin(true)}
-				  >
-					Login here
-				  </button>
-				</p>
-			  </>
-			)}
-		  </div>
-		)}
-		{error && <p className="error-message">{error}</p>}
-	  </main>
-	</div>
+                <form
+                  onSubmit={
+                    editingProduct ? handleUpdateProduct : handleCreateProduct
+                  }
+                  className="product-form"
+                >
+                  <h4>
+                    {editingProduct ? "Edit Product" : "Create New Product"}
+                  </h4>
+                  <input
+                    type="text"
+                    placeholder="Product Name"
+                    value={newProductName}
+                    onChange={(e) => setNewProductName(e.target.value)}
+                    required
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Price"
+                    value={newProductPrice}
+                    onChange={(e) => setNewProductPrice(e.target.value)}
+                    required
+                  />
+                  <select
+                    value={newProductCategory}
+                    onChange={(e) => setNewProductCategory(e.target.value)}
+                  >
+                    <option value="">Select Category (optional)</option>
+                    {categories.map((cat) => (
+                      <option key={cat._id} value={cat._id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                  <textarea
+                    placeholder="Description"
+                    value={newProductDesc}
+                    onChange={(e) => setNewProductDesc(e.target.value)}
+                    required
+                  ></textarea>
+                  <div className="form-buttons">
+                    <button type="submit">
+                      {editingProduct ? "Update Product" : "Create Product"}
+                    </button>
+                    {editingProduct && (
+                      <button type="button" onClick={cancelEdit}>
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="centered-content">
+            {showLogin ? (
+              <>
+                <Login />
+                <p>
+                  No account?{" "}
+                  <button
+                    className="link-button"
+                    onClick={() => setShowLogin(false)}
+                  >
+                    Register here
+                  </button>
+                </p>
+              </>
+            ) : (
+              <>
+                <Register />
+                <p>
+                  Already have an account?{" "}
+                  <button
+                    className="link-button"
+                    onClick={() => setShowLogin(true)}
+                  >
+                    Login here
+                  </button>
+                </p>
+              </>
+            )}
+          </div>
+        )}
+        {error && <p className="error-message">{error}</p>}
+      </main>
+    </div>
   );
 }
 

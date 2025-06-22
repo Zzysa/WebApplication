@@ -186,6 +186,21 @@ app.use("/api/coupons", async (req, res, next) => {
 	}
 });
 
+app.use("/api/cart", async (req, res, next) => {
+	try {
+		const url = `${USER_SERVICE_URL}${req.originalUrl}`;
+		const response = await axios({
+			method: req.method,
+			url,
+			data: req.body,
+			headers: { Authorization: req.headers.authorization },
+		});
+		res.status(response.status).json(response.data);
+	} catch (error) {
+		next(error);
+	}
+});
+
 app.use((err, req, res, next) => {
 	console.error(`[API Gateway Error] ${req.method} ${req.originalUrl}:`, err.message);
 	if (err.response) {

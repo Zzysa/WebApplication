@@ -349,6 +349,156 @@ app.post("/api/payments/refund/:paymentId",
 	}
 );
 
+// Cart routes
+app.get("/api/cart", verifyAuthToken, addUserToRequest, async (req, res, next) => {
+  try {
+    const cartItems = await prisma.cartItem.findMany({
+      where: { userId: req.user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.status(200).json(cartItems);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/cart/add", 
+  verifyAuthToken, 
+  addUserToRequest,
+  [
+    body("productId").isString().withMessage("Product ID is required"),
+    body("productName").isString().withMessage("Product name is required"),
+    body("price").isFloat({ gt: 0 }).withMessage("Price must be greater than 0"),
+    body("quantity").optional().isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
+    body("imageUrl").optional().isString().withMessage("Image URL must be a string"),
+  ],
+  async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: "Validation failed", 
+        errors: errors.array() 
+      });
+    }
+
+    const { productId, productName, price, quantity = 1, imageUrl } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const existingItem = await prisma.cartItem.findUnique({
+        where: { 
+          userId_productId: { 
+            userId: userId, 
+            productId: productId 
+          } 
+        }
+      });
+
+      if (existingItem) {
+        const updatedItem = await prisma.cartItem.update({
+          where: { 
+            userId_productId: { 
+              userId: userId, 
+              productId: productId 
+            } 
+          },
+          data: { 
+            quantity: existingItem.quantity + quantity,
+            price: price,
+            productName: productName,
+            imageUrl: imageUrl
+          }
+        });
+        res.status(200).json(updatedItem);
+      } else {
+        const newItem = await prisma.cartItem.create({
+          data: {
+            userId: userId,
+            productId: productId,
+            productName: productName,
+            price: price,
+            quantity: quantity,
+            imageUrl: imageUrl
+          }
+        });
+        res.status(201).json(newItem);
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+app.put("/api/cart/:itemId", 
+  verifyAuthToken, 
+  addUserToRequest,
+  [
+    body("quantity").isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
+  ],
+  async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: "Validation failed", 
+        errors: errors.array() 
+      });
+    }
+
+    const { itemId } = req.params;
+    const { quantity } = req.body;
+    const userId = req.user.id;
+
+    try {
+      const updatedItem = await prisma.cartItem.update({
+        where: { 
+          id: itemId,
+          userId: userId
+        },
+        data: { quantity: quantity }
+      });
+      res.status(200).json(updatedItem);
+    } catch (error) {
+      if (error.code === 'P2025') {
+        return res.status(404).json({ message: "Cart item not found" });
+      }
+      next(error);
+    }
+  }
+);
+
+app.delete("/api/cart/:itemId", verifyAuthToken, addUserToRequest, async (req, res, next) => {
+  const { itemId } = req.params;
+  const userId = req.user.id;
+
+  try {
+    await prisma.cartItem.delete({
+      where: { 
+        id: itemId,
+        userId: userId
+      }
+    });
+    res.status(200).json({ message: "Item removed from cart" });
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return res.status(404).json({ message: "Cart item not found" });
+    }
+    next(error);
+  }
+});
+
+app.delete("/api/cart/clear", verifyAuthToken, addUserToRequest, async (req, res, next) => {
+  const userId = req.user.id;
+
+  try {
+    await prisma.cartItem.deleteMany({
+      where: { userId: userId }
+    });
+    res.status(200).json({ message: "Cart cleared" });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((err, req, res, next) => {
 	console.error("[Account Service Error]", err.stack);
 	res.status(500).json({ message: "Something went wrong!" });

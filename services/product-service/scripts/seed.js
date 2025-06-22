@@ -5,7 +5,9 @@ const Coupon = require("../models/Coupon.js");
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI || "mongodb://root:password@mongo:27017";
+    const mongoUri =
+      process.env.MONGO_URI ||
+      "mongodb://root:password@mongo:27017/productdb?authSource=admin";
     await mongoose.connect(mongoUri);
     console.log("MongoDB Connected for seeding");
   } catch (error) {

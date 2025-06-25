@@ -1,76 +1,7 @@
 const request = require('supertest');
-const express = require('express');
-const { PrismaClient } = require('../prisma/generated/prisma');
-const { body, validationResult } = require('express-validator');
+const { createTestApp, prisma } = require('./setup');
 
-const app = express();
-app.use(express.json());
-
-const prisma = new PrismaClient();
-
-const verifyAuthToken = require('../middleware/auth-middleware');
-const addUserToRequest = require('../middleware/addUserToRequest');
-
-app.post('/api/payments/process', 
-  verifyAuthToken, 
-  addUserToRequest,
-  [
-    body("orderId").isString(),
-    body("amount").isFloat({ gt: 0 }),
-    body("method").isIn(["card", "bank_transfer", "paypal"]),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { orderId, amount, method } = req.body;
-    const userId = req.user.id;
-
-    try {
-      const order = await prisma.order.findFirst({
-        where: { id: orderId, userId: userId }
-      });
-
-      if (!order) {
-        return res.status(404).json({ message: "Order not found" });
-      }
-
-      const mockTransactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      const payment = await prisma.payment.create({
-        data: {
-          orderId: orderId,
-          amount: amount,
-          method: method,
-          status: "completed",
-          transactionId: mockTransactionId,
-          gatewayResponse: JSON.stringify({
-            gateway: "mock_payment_gateway",
-            status: "success"
-          })
-        }
-      });
-
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { 
-          paymentStatus: "completed",
-          transactionId: mockTransactionId,
-          status: "processing"
-        }
-      });
-
-      res.status(201).json({
-        ...payment,
-        gatewayResponse: JSON.parse(payment.gatewayResponse || '{}')
-      });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  }
-);
+const app = createTestApp();
 
 describe('Payments Tests', () => {
   let testUser, testOrder;
@@ -115,13 +46,47 @@ describe('Payments Tests', () => {
 
     expect(response.body.status).toBe('completed');
     expect(response.body.amount).toBe(100);
+    expect(response.body.method).toBe('card');
     expect(response.body.transactionId).toMatch(/^txn_/);
+    expect(response.body.orderId).toBe(testOrder.id);
 
     const updatedOrder = await prisma.order.findUnique({
       where: { id: testOrder.id }
     });
     expect(updatedOrder.paymentStatus).toBe('completed');
     expect(updatedOrder.status).toBe('processing');
+    expect(updatedOrder.transactionId).toBeDefined();
+  });
+
+  test('should process payment with different methods', async () => {
+    const methods = ['card', 'paypal', 'bank_transfer'];
+    
+    for (const method of methods) {
+      const order = await prisma.order.create({
+        data: {
+          userId: testUser.id,
+          products: JSON.stringify([{ name: "Test Product", quantity: 1, price: 50 }]),
+          totalPrice: 50,
+          paymentMethod: method,
+          status: "pending_payment"
+        }
+      });
+
+      const paymentData = {
+        orderId: order.id,
+        amount: 50,
+        method: method
+      };
+
+      const response = await request(app)
+        .post('/api/payments/process')
+        .set('Authorization', 'Bearer mock-token')
+        .send(paymentData)
+        .expect(201);
+
+      expect(response.body.method).toBe(method);
+      expect(response.body.status).toBe('completed');
+    }
   });
 
   test('should reject payment for non-existent order', async () => {
@@ -131,11 +96,47 @@ describe('Payments Tests', () => {
       method: "card"
     };
 
-    await request(app)
+    const response = await request(app)
       .post('/api/payments/process')
       .set('Authorization', 'Bearer mock-token')
       .send(paymentData)
       .expect(404);
+
+    expect(response.body.message).toBe('Order not found');
+  });
+
+  test('should reject payment for other users order', async () => {
+    const otherUser = await prisma.user.create({
+      data: {
+        firebaseUid: 'other-user-uid',
+        email: 'other@test.com',
+        role: 'client'
+      }
+    });
+
+    const otherUserOrder = await prisma.order.create({
+      data: {
+        userId: otherUser.id,
+        products: JSON.stringify([{ name: "Test Product", quantity: 1, price: 100 }]),
+        totalPrice: 100,
+        paymentMethod: "card",
+        status: "pending_payment"
+      }
+    });
+
+    const paymentData = {
+      orderId: otherUserOrder.id,
+      amount: 100,
+      method: "card"
+    };
+
+    const response = await request(app)
+      .post('/api/payments/process')
+      .set('Authorization', 'Bearer mock-token')
+      .send(paymentData)
+      .expect(404);
+
+    expect(response.body.message).toBe('Order not found');
   });
 
   test('should validate payment data', async () => {
@@ -152,5 +153,75 @@ describe('Payments Tests', () => {
       .expect(400);
 
     expect(response.body.errors).toBeDefined();
+    expect(response.body.errors.length).toBeGreaterThan(0);
+  });
+
+  test('should validate payment method', async () => {
+    const paymentData = {
+      orderId: testOrder.id,
+      amount: 100,
+      method: "cryptocurrency"
+    };
+
+    const response = await request(app)
+      .post('/api/payments/process')
+      .set('Authorization', 'Bearer mock-token')
+      .send(paymentData)
+      .expect(400);
+
+    expect(response.body.errors).toBeDefined();
+  });
+
+  test('should validate amount is positive', async () => {
+    const paymentData = {
+      orderId: testOrder.id,
+      amount: 0,
+      method: "card"
+    };
+
+    const response = await request(app)
+      .post('/api/payments/process')
+      .set('Authorization', 'Bearer mock-token')
+      .send(paymentData)
+      .expect(400);
+
+    expect(response.body.errors).toBeDefined();
+  });
+
+  test('should require authentication for payment processing', async () => {
+    const paymentData = {
+      orderId: testOrder.id,
+      amount: 100,
+      method: "card"
+    };
+
+    await request(app)
+      .post('/api/payments/process')
+      .send(paymentData)
+      .expect(401);
+  });
+
+  test('should create payment record in database', async () => {
+    const paymentData = {
+      orderId: testOrder.id,
+      amount: 100,
+      method: "card"
+    };
+
+    await request(app)
+      .post('/api/payments/process')
+      .set('Authorization', 'Bearer mock-token')
+      .send(paymentData)
+      .expect(201);
+
+    const payment = await prisma.payment.findFirst({
+      where: { orderId: testOrder.id }
+    });
+
+    expect(payment).toBeDefined();
+    expect(payment.amount).toBe(100);
+    expect(payment.method).toBe('card');
+    expect(payment.status).toBe('completed');
+    expect(payment.gatewayResponse).toBeDefined();
   });
 });

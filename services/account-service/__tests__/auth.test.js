@@ -1,38 +1,7 @@
 const request = require('supertest');
-const express = require('express');
-const { PrismaClient } = require('../prisma/generated/prisma');
+const { createTestApp, prisma } = require('./setup');
 
-const app = express();
-app.use(express.json());
-
-const prisma = new PrismaClient();
-
-const verifyAuthToken = require('../middleware/auth-middleware');
-const addUserToRequest = require('../middleware/addUserToRequest');
-
-app.post('/api/auth/sync', verifyAuthToken, async (req, res) => {
-  const { uid, email } = req.firebaseUser;
-  
-  try {
-    let user = await prisma.user.findUnique({
-      where: { firebaseUid: uid }
-    });
-
-    if (!user) {
-      user = await prisma.user.create({
-        data: { firebaseUid: uid, email: email, role: "client" }
-      });
-    }
-
-    res.status(200).json({ message: "User synced successfully", user });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.get('/api/users/me', verifyAuthToken, addUserToRequest, (req, res) => {
-  res.status(200).json(req.user);
-});
+const app = createTestApp();
 
 describe('Authentication Tests', () => {
   beforeEach(async () => {
@@ -68,9 +37,69 @@ describe('Authentication Tests', () => {
     expect(response.body.role).toBe('client');
   });
 
+  test('should get all users as admin', async () => {
+    await prisma.user.create({
+      data: {
+        firebaseUid: 'test-uid-123',
+        email: 'test@test.com',
+        role: 'admin'
+      }
+    });
+
+    await prisma.user.create({
+      data: {
+        firebaseUid: 'user2-uid',
+        email: 'user2@test.com',
+        role: 'client'
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/users')
+      .set('Authorization', 'Bearer mock-token')
+      .expect(200);
+
+    expect(response.body).toHaveLength(2);
+    expect(response.body.some(user => user.email === 'test@test.com')).toBe(true);
+    expect(response.body.some(user => user.email === 'user2@test.com')).toBe(true);
+  });
+
+  test('should reject non-admin from getting all users', async () => {
+    await prisma.user.create({
+      data: {
+        firebaseUid: 'test-uid-123',
+        email: 'test@test.com',
+        role: 'client'
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/users')
+      .set('Authorization', 'Bearer mock-token')
+      .expect(403);
+
+    expect(response.body.message).toBe('Admin access required');
+  });
+
   test('should reject request without token', async () => {
     await request(app)
       .post('/api/auth/sync')
+      .expect(401);
+
+    await request(app)
+      .get('/api/users/me')
+      .expect(401);
+  });
+
+  test('should reject request with invalid token format', async () => {
+    await request(app)
+      .post('/api/auth/sync')
+      .set('Authorization', 'InvalidToken')
+      .expect(401);
+
+    await request(app)
+      .get('/api/users/me')
+      .set('Authorization', 'Bearer')
       .expect(401);
   });
 });

@@ -6,6 +6,7 @@ const productRoutes = require("./routes/productRoutes.js");
 const categoryRoutes = require("./routes/categoryRoutes.js");
 const helmet = require("helmet");
 const couponRoutes = require("./routes/couponRoutes.js");
+const adminCouponRoutes = require("./routes/adminCouponRoutes.js");
 
 connectDB();
 
@@ -28,6 +29,7 @@ app.use(express.json());
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/coupons", couponRoutes);
+app.use("/api/admin/coupons", adminCouponRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

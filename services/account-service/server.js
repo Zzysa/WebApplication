@@ -1,509 +1,63 @@
 const express = require("express");
-const { PrismaClient } = require("./prisma/generated/prisma");
+const cors = require("cors");
 const helmet = require("helmet");
-const admin = require("./config/firebase-admin.js");
-const verifyAuthToken = require("./middleware/auth-middleware.js");
-const addUserToRequest = require("./middleware/addUserToRequest.js");
-const checkRole = require("./middleware/checkRole.js");
-const { body, validationResult } = require("express-validator");
+const { PrismaClient } = require("./prisma/generated/prisma");
+
+const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
+const cartRoutes = require("./routes/cartRoutes");
+const orderRoutes = require("./routes/orderRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
-app.use(helmet());
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
-app.use((req, res, next) => {
-	res.set({
-		'Cache-Control': 'no-cache, no-store, must-revalidate',
-		'Pragma': 'no-cache',
-		'Expires': '0'
-	});
-	next();
-});
-
+app.use(helmet());
+app.use(cors());
 app.use(express.json());
 
-app.post("/api/auth/sync", verifyAuthToken, async (req, res, next) => {
-	const { uid, email } = req.firebaseUser;
-	console.log(`[SYNC] Processing user: ${email} with UID: ${uid}`);
-	
-	try {
-		let user = await prisma.user.findUnique({
-			where: { firebaseUid: uid },
-		});
-
-		if (!user) {
-			const userByEmail = await prisma.user.findUnique({
-				where: { email: email },
-			});
-
-			if (userByEmail) {
-				user = await prisma.user.update({
-					where: { email: email },
-					data: { firebaseUid: uid },
-				});
-				console.log(`[SYNC] Linked existing user ${email} to Firebase UID ${uid}`);
-			} else {
-				user = await prisma.user.create({
-					data: { firebaseUid: uid, email: email, role: "client" },
-				});
-				console.log(`[SYNC] Created new user ${email} with role: client`);
-			}
-		} else {
-			console.log(`[SYNC] User ${email} already exists with role: ${user.role}`);
-		}
-
-		console.log(`[SYNC] User from DB has role: ${user.role}`);
-		
-		if (admin.isInitialized && admin.isInitialized()) {
-			await admin.auth().setCustomUserClaims(uid, { role: user.role });
-			console.log(`[SYNC] Set custom claim for UID ${uid} with role: ${user.role}`);
-		} else {
-			console.log(`[SYNC] Firebase not initialized, skipping custom claims for UID ${uid}`);
-		}
-
-		res.status(200).json({ message: "User synced successfully", user: { email: user.email, role: user.role } });
-	} catch (error) {
-		console.error(`[SYNC] Error processing user ${email}:`, error);
-		next(error);
-	}
-});
-
-app.get("/api/users/me", verifyAuthToken, addUserToRequest, (req, res) => {
-	res.status(200).json(req.user);
-});
-
-app.get(
-	"/api/users",
-	verifyAuthToken,
-	addUserToRequest,
-	checkRole("admin"),
-	async (req, res, next) => {
-		try {
-			const users = await prisma.user.findMany();
-			res.status(200).json(users);
-		} catch (error) {
-			next(error);
-		}
-	},
-);
-
-app.post("/api/orders", 
-	verifyAuthToken, 
-	addUserToRequest,
-	[
-		body("products")
-			.isArray({ min: 1 })
-			.withMessage("Products must be a non-empty array"),
-		body("totalPrice")
-			.isFloat({ gt: 0 })
-			.withMessage("Total price must be greater than 0"),
-		body("paymentMethod") 
-			.isIn(["card", "bank_transfer", "paypal"])
-			.withMessage("Invalid payment method selected"),
-	],
-	async (req, res, next) => {
-		const errors = validationResult(req);
-		if (!errors.isEmpty()) {
-			return res.status(400).json({ 
-				message: "Validation failed", 
-				errors: errors.array() 
-			});
-		}
-
-		const { products, totalPrice, paymentMethod } = req.body; 
-		const userId = req.user.id;
-
-		try {
-			const order = await prisma.order.create({
-				data: {
-					userId: userId,
-					products: products,
-					totalPrice: totalPrice,
-					paymentMethod: paymentMethod, 
-					status: "pending_payment",    
-				},
-			});
-			res.status(201).json(order);
-		} catch (error) {
-			next(error);
-		}
-	}
-);
-
-app.get("/api/orders", verifyAuthToken, addUserToRequest, async (req, res, next) => {
-	const userId = req.user.id;
-	try {
-		const orders = await prisma.order.findMany({
-			where: { userId: userId },
-			orderBy: { createdAt: 'desc' }
-		});
-		res.status(200).json(orders);
-	} catch (error) {
-		next(error);
-	}
-});
-
-app.get("/api/orders/:id", verifyAuthToken, addUserToRequest, async (req, res, next) => {
-	const { id } = req.params;
-	const userId = req.user.id;
-	const isAdmin = req.user.role === "admin";
-
-	try {
-		const where = isAdmin ? { id } : { id, userId };
-		const order = await prisma.order.findFirst({ where });
-		
-		if (!order) {
-			return res.status(404).json({ message: "Order not found" });
-		}
-		
-		res.status(200).json(order);
-	} catch (error) {
-		next(error);
-	}
-});
-
-app.get(
-	"/api/admin/orders",
-	verifyAuthToken,
-	addUserToRequest,
-	checkRole("admin"),
-	async (req, res, next) => {
-		try {
-			const orders = await prisma.order.findMany({
-				include: { user: { select: { email: true } } },
-				orderBy: { createdAt: 'desc' }
-			});
-			res.status(200).json(orders);
-		} catch (error) {
-			next(error);
-		}
-	}
-);
-
-app.patch(
-	"/api/orders/:id/status",
-	verifyAuthToken,
-	addUserToRequest,
-	checkRole("admin"),
-	[
-		body("status")
-			.isIn(["pending", "processing", "shipped", "delivered", "cancelled"])
-			.withMessage("Invalid status value"),
-	],
-	async (req, res, next) => {
-		const errors = validationResult(req);
-		if (!errors.isEmpty()) {
-			return res.status(400).json({ 
-				message: "Validation failed", 
-				errors: errors.array() 
-			});
-		}
-
-		const { id } = req.params;
-		const { status } = req.body;
-
-		try {
-			const order = await prisma.order.update({
-				where: { id },
-				data: { status }
-			});
-			res.status(200).json(order);
-		} catch (error) {
-			if (error.code === 'P2025') {
-				return res.status(404).json({ message: "Order not found" });
-			}
-			next(error);
-		}
-	}
-);
-
-app.post("/api/payments/process", 
-	verifyAuthToken, 
-	addUserToRequest,
-	[
-		body("orderId").isString().withMessage("Order ID is required"),
-		body("amount").isFloat({ gt: 0 }).withMessage("Amount must be greater than 0"),
-		body("method").isIn(["card", "bank_transfer", "paypal"]).withMessage("Invalid payment method"),
-	],
-	async (req, res, next) => {
-		const errors = validationResult(req);
-		if (!errors.isEmpty()) {
-			return res.status(400).json({ 
-				message: "Validation failed", 
-				errors: errors.array() 
-			});
-		}
-
-		const { orderId, amount, method } = req.body;
-		const userId = req.user.id;
-
-		try {
-			const order = await prisma.order.findFirst({
-				where: { id: orderId, userId: userId }
-			});
-
-			if (!order) {
-				return res.status(404).json({ message: "Order not found" });
-			}
-
-			const mockTransactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-			const mockGatewayResponse = {
-				gateway: "mock_payment_gateway",
-				status: "success",
-				fee: amount * 0.029,
-				currency: "USD"
-			};
-
-			const payment = await prisma.payment.create({
-				data: {
-					orderId: orderId,
-					amount: amount,
-					method: method,
-					status: "completed",
-					transactionId: mockTransactionId,
-					gatewayResponse: mockGatewayResponse
-				}
-			});
-
-			await prisma.order.update({
-				where: { id: orderId },
-				data: { 
-					paymentStatus: "completed",
-					transactionId: mockTransactionId,
-					status: "processing"
-				}
-			});
-
-			res.status(201).json(payment);
-		} catch (error) {
-			next(error);
-		}
-	}
-);
-
-app.get("/api/payments/order/:orderId", verifyAuthToken, addUserToRequest, async (req, res, next) => {
-	const { orderId } = req.params;
-	const userId = req.user.id;
-	const isAdmin = req.user.role === "admin";
-
-	try {
-		const where = isAdmin 
-			? { orderId } 
-			: { 
-				orderId, 
-				order: { userId } 
-			};
-
-		const payments = await prisma.payment.findMany({ 
-			where,
-			orderBy: { createdAt: 'desc' }
-		});
-		
-		res.status(200).json(payments);
-	} catch (error) {
-		next(error);
-	}
-});
-
-app.post("/api/payments/refund/:paymentId",
-	verifyAuthToken,
-	addUserToRequest,
-	checkRole("admin"),
-	async (req, res, next) => {
-		const { paymentId } = req.params;
-
-		try {
-			const payment = await prisma.payment.findUnique({
-				where: { id: paymentId }
-			});
-
-			if (!payment) {
-				return res.status(404).json({ message: "Payment not found" });
-			}
-
-			const refundTransactionId = `refund_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-			await prisma.payment.update({
-				where: { id: paymentId },
-				data: { 
-					status: "refunded",
-					gatewayResponse: {
-						...payment.gatewayResponse,
-						refund: {
-							id: refundTransactionId,
-							amount: payment.amount,
-							date: new Date().toISOString()
-						}
-					}
-				}
-			});
-
-			res.status(200).json({ 
-				message: "Refund processed successfully",
-				refundId: refundTransactionId 
-			});
-		} catch (error) {
-			next(error);
-		}
-	}
-);
-
-// Cart routes
-app.get("/api/cart", verifyAuthToken, addUserToRequest, async (req, res, next) => {
+const testDatabaseConnection = async () => {
   try {
-    const cartItems = await prisma.cartItem.findMany({
-      where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.status(200).json(cartItems);
+    await prisma.$connect();
+    console.log("[Account Service] Database connected successfully");
+    const userCount = await prisma.user.count();
+    console.log(`[Account Service] Users in database: ${userCount}`);
   } catch (error) {
-    next(error);
+    console.error("[Account Service] Database connection failed:", error.message);
+    process.exit(1);
   }
+};
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", service: "account-service" });
 });
 
-app.post("/api/cart/add", 
-  verifyAuthToken, 
-  addUserToRequest,
-  [
-    body("productId").isString().withMessage("Product ID is required"),
-    body("productName").isString().withMessage("Product name is required"),
-    body("price").isFloat({ gt: 0 }).withMessage("Price must be greater than 0"),
-    body("quantity").optional().isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
-    body("imageUrl").optional().isString().withMessage("Image URL must be a string"),
-  ],
-  async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        message: "Validation failed", 
-        errors: errors.array() 
-      });
-    }
-
-    const { productId, productName, price, quantity = 1, imageUrl } = req.body;
-    const userId = req.user.id;
-
-    try {
-      const existingItem = await prisma.cartItem.findUnique({
-        where: { 
-          userId_productId: { 
-            userId: userId, 
-            productId: productId 
-          } 
-        }
-      });
-
-      if (existingItem) {
-        const updatedItem = await prisma.cartItem.update({
-          where: { 
-            userId_productId: { 
-              userId: userId, 
-              productId: productId 
-            } 
-          },
-          data: { 
-            quantity: existingItem.quantity + quantity,
-            price: price,
-            productName: productName,
-            imageUrl: imageUrl
-          }
-        });
-        res.status(200).json(updatedItem);
-      } else {
-        const newItem = await prisma.cartItem.create({
-          data: {
-            userId: userId,
-            productId: productId,
-            productName: productName,
-            price: price,
-            quantity: quantity,
-            imageUrl: imageUrl
-          }
-        });
-        res.status(201).json(newItem);
-      }
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-app.put("/api/cart/:itemId", 
-  verifyAuthToken, 
-  addUserToRequest,
-  [
-    body("quantity").isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
-  ],
-  async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        message: "Validation failed", 
-        errors: errors.array() 
-      });
-    }
-
-    const { itemId } = req.params;
-    const { quantity } = req.body;
-    const userId = req.user.id;
-
-    try {
-      const updatedItem = await prisma.cartItem.update({
-        where: { 
-          id: itemId,
-          userId: userId
-        },
-        data: { quantity: quantity }
-      });
-      res.status(200).json(updatedItem);
-    } catch (error) {
-      if (error.code === 'P2025') {
-        return res.status(404).json({ message: "Cart item not found" });
-      }
-      next(error);
-    }
-  }
-);
-
-app.delete("/api/cart/:itemId", verifyAuthToken, addUserToRequest, async (req, res, next) => {
-  const { itemId } = req.params;
-  const userId = req.user.id;
-
-  try {
-    await prisma.cartItem.delete({
-      where: { 
-        id: itemId,
-        userId: userId
-      }
-    });
-    res.status(200).json({ message: "Item removed from cart" });
-  } catch (error) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: "Cart item not found" });
-    }
-    next(error);
-  }
-});
-
-app.delete("/api/cart/clear", verifyAuthToken, addUserToRequest, async (req, res, next) => {
-  const userId = req.user.id;
-
-  try {
-    await prisma.cartItem.deleteMany({
-      where: { userId: userId }
-    });
-    res.status(200).json({ message: "Cart cleared" });
-  } catch (error) {
-    next(error);
-  }
-});
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/cart", cartRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use((err, req, res, next) => {
-	console.error("[Account Service Error]", err.stack);
-	res.status(500).json({ message: "Something went wrong!" });
+  console.error("Server error:", err);
+  res.status(500).json({ message: "Something went wrong!" });
 });
 
-app.listen(PORT, () => {
-	console.log(`[Account Service] Running on port ${PORT}`);
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
+
+testDatabaseConnection().then(() => {
+  app.listen(PORT, () => {
+    console.log(`[Account Service] Server running on port ${PORT}`);
+  });
+});
+
+process.on('SIGTERM', async () => {
+  console.log('[Account Service] SIGTERM received, shutting down gracefully');
+  await prisma.$disconnect();
+  process.exit(0);
 });

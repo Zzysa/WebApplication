@@ -2,28 +2,33 @@ const admin = require("firebase-admin");
 const fs = require("fs");
 const path = require("path");
 
+console.log("[Firebase Admin] Initializing...");
+
 const serviceAccountPath = path.join(__dirname, "firebase-service-account.json");
 
 let isFirebaseInitialized = false;
 
-if (fs.existsSync(serviceAccountPath)) {
-  try {
+try {
+  if (fs.existsSync(serviceAccountPath)) {
+    console.log("[Firebase Admin] Service account file found");
     const serviceAccount = require("./firebase-service-account.json");
     
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
-    console.log("[Account Service] Firebase Admin initialized successfully");
+    console.log("[Firebase Admin] initialized successfully with service account");
     isFirebaseInitialized = true;
-  } catch (error) {
-    console.log("[Account Service] Firebase initialization failed:", error.message);
+  } else {
+    console.log("[Firebase Admin] Service account file not found, using mock mode");
     isFirebaseInitialized = false;
   }
-} else {
-  console.log("[Account Service] Firebase service account file not found");
+} catch (error) {
+  console.log("[Firebase Admin] initialization failed:", error.message);
   isFirebaseInitialized = false;
 }
 
 admin.isInitialized = () => isFirebaseInitialized;
+
+console.log("[Firebase Admin] Setup complete, initialized:", isFirebaseInitialized);
 
 module.exports = admin;

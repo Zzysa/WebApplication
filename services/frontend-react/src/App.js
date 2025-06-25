@@ -141,33 +141,21 @@ function App() {
   useEffect(() => {
     const fetchAndSetUserData = async (firebaseUser) => {
       try {
-        const idToken = await firebaseUser.getIdToken(true);
+        const idToken = await firebaseUser.getIdToken();
         
-        await axios.post(
-          `${API_GATEWAY_URL}/api/auth/sync`,
-          {},
-          { 
-            headers: { Authorization: `Bearer ${idToken}` },
-            timeout: 10000
-          },
-        );
-        
-        const response = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
+        const userResponse = await axios.get(`${API_GATEWAY_URL}/api/users/me`, {
           headers: { Authorization: `Bearer ${idToken}` },
-          timeout: 10000
+          timeout: 15000
         });
         
-        setUserData(response.data);
+        setUserData(userResponse.data);
+        setError("");
       } catch (err) {
-        console.error("User data fetch error:", err);
-        if (err.response?.status === 304) {
-          console.log("User data not modified, using cached data");
-          return;
-        }
-        setError("Could not sync or fetch user data.");
+        console.error("User data error:", err);
+        setError("Could not load user data");
       }
     };
-  
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
@@ -182,7 +170,7 @@ function App() {
         fetchAndSetUserData(currentUser).finally(() => setLoading(false));
       }
     });
-  
+
     fetchProducts();
     fetchCategories();
     return () => unsubscribe();
@@ -400,8 +388,16 @@ function App() {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       setCart([]);
+      setError("");
     } catch (err) {
       console.error("Error clearing cart:", err);
+
+      if (err.response?.status === 404 || err.response?.data?.message?.includes('empty')) {
+        setCart([]);
+        console.log("Cart was already empty");
+        return;
+      } 
+
       setError("Could not clear cart");
     }
   };

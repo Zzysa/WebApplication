@@ -1,157 +1,7 @@
 const request = require('supertest');
-const express = require('express');
-const { PrismaClient } = require('../prisma/generated/prisma');
-const { body, validationResult } = require('express-validator');
+const { createTestApp, prisma } = require('./setup');
 
-const app = express();
-app.use(express.json());
-
-const prisma = new PrismaClient();
-
-const verifyAuthToken = require('../middleware/auth-middleware');
-const addUserToRequest = require('../middleware/addUserToRequest');
-
-app.get('/api/cart', verifyAuthToken, addUserToRequest, async (req, res) => {
-  try {
-    const cartItems = await prisma.cartItem.findMany({
-      where: { userId: req.user.id },
-      orderBy: { createdAt: 'desc' }
-    });
-    res.status(200).json(cartItems);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.post('/api/cart/add', 
-  verifyAuthToken, 
-  addUserToRequest,
-  [
-    body("productId").isString().withMessage("Product ID is required"),
-    body("productName").isString().withMessage("Product name is required"),
-    body("price").isFloat({ gt: 0 }).withMessage("Price must be greater than 0"),
-    body("quantity").optional().isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { productId, productName, price, quantity = 1, imageUrl } = req.body;
-    const userId = req.user.id;
-
-    try {
-      const existingItem = await prisma.cartItem.findUnique({
-        where: { 
-          userId_productId: { 
-            userId: userId, 
-            productId: productId 
-          } 
-        }
-      });
-
-      if (existingItem) {
-        const updatedItem = await prisma.cartItem.update({
-          where: { 
-            userId_productId: { 
-              userId: userId, 
-              productId: productId 
-            } 
-          },
-          data: { 
-            quantity: existingItem.quantity + quantity,
-            price: price,
-            productName: productName,
-            imageUrl: imageUrl
-          }
-        });
-        res.status(200).json(updatedItem);
-      } else {
-        const newItem = await prisma.cartItem.create({
-          data: {
-            userId: userId,
-            productId: productId,
-            productName: productName,
-            price: price,
-            quantity: quantity,
-            imageUrl: imageUrl
-          }
-        });
-        res.status(201).json(newItem);
-      }
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  }
-);
-
-app.put('/api/cart/:itemId', 
-  verifyAuthToken, 
-  addUserToRequest,
-  [
-    body("quantity").isInt({ min: 1 }).withMessage("Quantity must be at least 1"),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { itemId } = req.params;
-    const { quantity } = req.body;
-    const userId = req.user.id;
-
-    try {
-      const updatedItem = await prisma.cartItem.update({
-        where: { 
-          id: itemId,
-          userId: userId
-        },
-        data: { quantity: quantity }
-      });
-      res.status(200).json(updatedItem);
-    } catch (error) {
-      if (error.code === 'P2025') {
-        return res.status(404).json({ message: "Cart item not found" });
-      }
-      res.status(500).json({ message: error.message });
-    }
-  }
-);
-
-app.delete('/api/cart/clear', verifyAuthToken, addUserToRequest, async (req, res) => {
-  const userId = req.user.id;
-
-  try {
-    await prisma.cartItem.deleteMany({
-      where: { userId: userId }
-    });
-    res.status(200).json({ message: "Cart cleared" });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-app.delete('/api/cart/:itemId', verifyAuthToken, addUserToRequest, async (req, res) => {
-  const { itemId } = req.params;
-  const userId = req.user.id;
-
-  try {
-    await prisma.cartItem.delete({
-      where: { 
-        id: itemId,
-        userId: userId
-      }
-    });
-    res.status(200).json({ message: "Item removed from cart" });
-  } catch (error) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: "Cart item not found" });
-    }
-    res.status(500).json({ message: error.message });
-  }
-});
+const app = createTestApp();
 
 describe('Cart Tests', () => {
   let testUser;
@@ -229,8 +79,7 @@ describe('Cart Tests', () => {
   });
 
   test('should get cart items for user', async () => {
-    // Создаем товары с небольшой задержкой чтобы гарантировать разное время создания
-    const item1 = await prisma.cartItem.create({
+    await prisma.cartItem.create({
       data: {
         userId: testUser.id,
         productId: "product-1",
@@ -242,7 +91,7 @@ describe('Cart Tests', () => {
 
     await new Promise(resolve => setTimeout(resolve, 10));
 
-    const item2 = await prisma.cartItem.create({
+    await prisma.cartItem.create({
       data: {
         userId: testUser.id,
         productId: "product-2", 
@@ -329,7 +178,7 @@ describe('Cart Tests', () => {
       .set('Authorization', 'Bearer mock-token')
       .expect(200);
 
-    expect(response.body.message).toBe("Cart cleared");
+    expect(response.body.message).toBe("Cart cleared successfully");
 
     const remainingItems = await prisma.cartItem.findMany({
       where: { userId: testUser.id }

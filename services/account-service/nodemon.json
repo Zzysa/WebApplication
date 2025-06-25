@@ -1,0 +1,16 @@
+{
+  "ignore": [
+    "node_modules/*",
+    "prisma/generated/*",
+    "coverage/*",
+    "__tests__/*",
+    "*.test.js",
+    "*.log"
+  ],
+  "delay": 3000,
+  "verbose": true,
+  "legacyWatch": true,
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

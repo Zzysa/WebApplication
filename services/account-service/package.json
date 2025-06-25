@@ -1,15 +1,14 @@
 {
     "name": "account-service",
     "version": "1.0.0",
-    "description": "Backend service for the project",
+    "description": "Account service for microservice architecture",
     "main": "server.js",
     "scripts": {
-        "start": "npx prisma migrate deploy || npx prisma db push && node server.js",
-        "dev": "npx prisma generate && npx prisma migrate deploy && nodemon server.js",
-        "seed": "npx prisma db seed",
-        "test": "NODE_ENV=test npx prisma generate --schema=./prisma/schema.test.prisma && jest",
-        "test:watch": "NODE_ENV=test npx prisma generate --schema=./prisma/schema.test.prisma && jest --watch",
-        "test:coverage": "NODE_ENV=test npx prisma generate --schema=./prisma/schema.test.prisma && jest --coverage"
+        "start": "npx prisma db push && node server.js",
+        "dev": "npx prisma generate && npx prisma db push && nodemon server.js",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage"
     },
     "prisma": {
         "seed": "node prisma/seed.js"
@@ -20,8 +19,7 @@
         "express": "^4.19.2",
         "express-validator": "^7.2.1",
         "firebase-admin": "^13.4.0",
-        "helmet": "^8.1.0",
-        "jsonwebtoken": "^9.0.0"
+        "helmet": "^8.1.0"
     },
     "devDependencies": {
         "@types/jest": "^30.0.0",
